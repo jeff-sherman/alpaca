@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A1E22DCB1AA76DCD00C4CDBB /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = A1E22DCA1AA76DCD00C4CDBB /* main.c */; };
+		A1E22DD21AA76DF900C4CDBB /* libpcap.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A1E22DD11AA76DF900C4CDBB /* libpcap.dylib */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -25,6 +26,7 @@
 /* Begin PBXFileReference section */
 		A1E22DC71AA76DCD00C4CDBB /* libpcap_demo */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = libpcap_demo; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1E22DCA1AA76DCD00C4CDBB /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
+		A1E22DD11AA76DF900C4CDBB /* libpcap.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libpcap.dylib; path = usr/lib/libpcap.dylib; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -32,6 +34,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1E22DD21AA76DF900C4CDBB /* libpcap.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -41,6 +44,7 @@
 		A1E22DBE1AA76DCD00C4CDBB = {
 			isa = PBXGroup;
 			children = (
+				A1E22DD11AA76DF900C4CDBB /* libpcap.dylib */,
 				A1E22DC91AA76DCD00C4CDBB /* libpcap_demo */,
 				A1E22DC81AA76DCD00C4CDBB /* Products */,
 			);
