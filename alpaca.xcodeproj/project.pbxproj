@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A1E22DCB1AA76DCD00C4CDBB /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = A1E22DCA1AA76DCD00C4CDBB /* main.c */; };
+		A1E22DCB1AA76DCD00C4CDBB /* alpaca.c in Sources */ = {isa = PBXBuildFile; fileRef = A1E22DCA1AA76DCD00C4CDBB /* alpaca.c */; };
 		A1E22DD21AA76DF900C4CDBB /* libpcap.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A1E22DD11AA76DF900C4CDBB /* libpcap.dylib */; };
 /* End PBXBuildFile section */
 
@@ -24,8 +24,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		A1E22DC71AA76DCD00C4CDBB /* libpcap_demo */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = libpcap_demo; sourceTree = BUILT_PRODUCTS_DIR; };
-		A1E22DCA1AA76DCD00C4CDBB /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
+		A1E22DC71AA76DCD00C4CDBB /* alpaca */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = alpaca; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1E22DCA1AA76DCD00C4CDBB /* alpaca.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = alpaca.c; sourceTree = "<group>"; };
 		A1E22DD11AA76DF900C4CDBB /* libpcap.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libpcap.dylib; path = usr/lib/libpcap.dylib; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -45,7 +45,7 @@
 			isa = PBXGroup;
 			children = (
 				A1E22DD11AA76DF900C4CDBB /* libpcap.dylib */,
-				A1E22DC91AA76DCD00C4CDBB /* libpcap_demo */,
+				A1E22DC91AA76DCD00C4CDBB /* alpaca */,
 				A1E22DC81AA76DCD00C4CDBB /* Products */,
 			);
 			sourceTree = "<group>";
@@ -53,25 +53,26 @@
 		A1E22DC81AA76DCD00C4CDBB /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A1E22DC71AA76DCD00C4CDBB /* libpcap_demo */,
+				A1E22DC71AA76DCD00C4CDBB /* alpaca */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		A1E22DC91AA76DCD00C4CDBB /* libpcap_demo */ = {
+		A1E22DC91AA76DCD00C4CDBB /* alpaca */ = {
 			isa = PBXGroup;
 			children = (
-				A1E22DCA1AA76DCD00C4CDBB /* main.c */,
+				A1E22DCA1AA76DCD00C4CDBB /* alpaca.c */,
 			);
+			name = alpaca;
 			path = libpcap_demo;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A1E22DC61AA76DCD00C4CDBB /* libpcap_demo */ = {
+		A1E22DC61AA76DCD00C4CDBB /* alpaca */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A1E22DCE1AA76DCD00C4CDBB /* Build configuration list for PBXNativeTarget "libpcap_demo" */;
+			buildConfigurationList = A1E22DCE1AA76DCD00C4CDBB /* Build configuration list for PBXNativeTarget "alpaca" */;
 			buildPhases = (
 				A1E22DC31AA76DCD00C4CDBB /* Sources */,
 				A1E22DC41AA76DCD00C4CDBB /* Frameworks */,
@@ -81,9 +82,9 @@
 			);
 			dependencies = (
 			);
-			name = libpcap_demo;
+			name = alpaca;
 			productName = libpcap_demo;
-			productReference = A1E22DC71AA76DCD00C4CDBB /* libpcap_demo */;
+			productReference = A1E22DC71AA76DCD00C4CDBB /* alpaca */;
 			productType = "com.apple.product-type.tool";
 		};
 /* End PBXNativeTarget section */
@@ -100,7 +101,7 @@
 					};
 				};
 			};
-			buildConfigurationList = A1E22DC21AA76DCD00C4CDBB /* Build configuration list for PBXProject "libpcap_demo" */;
+			buildConfigurationList = A1E22DC21AA76DCD00C4CDBB /* Build configuration list for PBXProject "alpaca" */;
 			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = English;
 			hasScannedForEncodings = 0;
@@ -112,7 +113,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A1E22DC61AA76DCD00C4CDBB /* libpcap_demo */,
+				A1E22DC61AA76DCD00C4CDBB /* alpaca */,
 			);
 		};
 /* End PBXProject section */
@@ -122,7 +123,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A1E22DCB1AA76DCD00C4CDBB /* main.c in Sources */,
+				A1E22DCB1AA76DCD00C4CDBB /* alpaca.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -206,21 +207,29 @@
 		A1E22DCF1AA76DCD00C4CDBB /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SDKROOT)/usr/lib/system",
+				);
+				PRODUCT_NAME = alpaca;
 			};
 			name = Debug;
 		};
 		A1E22DD01AA76DCD00C4CDBB /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SDKROOT)/usr/lib/system",
+				);
+				PRODUCT_NAME = alpaca;
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A1E22DC21AA76DCD00C4CDBB /* Build configuration list for PBXProject "libpcap_demo" */ = {
+		A1E22DC21AA76DCD00C4CDBB /* Build configuration list for PBXProject "alpaca" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A1E22DCC1AA76DCD00C4CDBB /* Debug */,
@@ -229,7 +238,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A1E22DCE1AA76DCD00C4CDBB /* Build configuration list for PBXNativeTarget "libpcap_demo" */ = {
+		A1E22DCE1AA76DCD00C4CDBB /* Build configuration list for PBXNativeTarget "alpaca" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A1E22DCF1AA76DCD00C4CDBB /* Debug */,

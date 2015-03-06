@@ -2,6 +2,6 @@
 <Workspace
    version = "1.0">
    <FileRef
-      location = "self:libpcap_demo.xcodeproj">
+      location = "self:alpaca.xcodeproj">
    </FileRef>
 </Workspace>
