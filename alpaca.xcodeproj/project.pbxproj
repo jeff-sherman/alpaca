@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A117E64B1AB0C78D001962B2 /* setsignal.c in Sources */ = {isa = PBXBuildFile; fileRef = A117E6491AB0C78D001962B2 /* setsignal.c */; };
 		A1E22DCB1AA76DCD00C4CDBB /* alpaca.c in Sources */ = {isa = PBXBuildFile; fileRef = A1E22DCA1AA76DCD00C4CDBB /* alpaca.c */; };
 		A1E22DD21AA76DF900C4CDBB /* libpcap.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A1E22DD11AA76DF900C4CDBB /* libpcap.dylib */; };
 /* End PBXBuildFile section */
@@ -24,6 +25,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A117E6481AB09DDC001962B2 /* alpaca-config.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "alpaca-config.h"; sourceTree = "<group>"; };
+		A117E6491AB0C78D001962B2 /* setsignal.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = setsignal.c; sourceTree = "<group>"; };
+		A117E64A1AB0C78D001962B2 /* setsignal.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = setsignal.h; sourceTree = "<group>"; };
+		A117E64C1AB0E337001962B2 /* alpaca-ethernet.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "alpaca-ethernet.h"; sourceTree = "<group>"; };
 		A1E22DC71AA76DCD00C4CDBB /* alpaca */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = alpaca; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1E22DCA1AA76DCD00C4CDBB /* alpaca.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = alpaca.c; sourceTree = "<group>"; };
 		A1E22DD11AA76DF900C4CDBB /* libpcap.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libpcap.dylib; path = usr/lib/libpcap.dylib; sourceTree = SDKROOT; };
@@ -61,6 +66,10 @@
 		A1E22DC91AA76DCD00C4CDBB /* alpaca */ = {
 			isa = PBXGroup;
 			children = (
+				A117E64A1AB0C78D001962B2 /* setsignal.h */,
+				A117E6491AB0C78D001962B2 /* setsignal.c */,
+				A117E64C1AB0E337001962B2 /* alpaca-ethernet.h */,
+				A117E6481AB09DDC001962B2 /* alpaca-config.h */,
 				A1E22DCA1AA76DCD00C4CDBB /* alpaca.c */,
 			);
 			name = alpaca;
@@ -123,6 +132,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A117E64B1AB0C78D001962B2 /* setsignal.c in Sources */,
 				A1E22DCB1AA76DCD00C4CDBB /* alpaca.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -245,6 +255,7 @@
 				A1E22DD01AA76DCD00C4CDBB /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};

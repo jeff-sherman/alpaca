@@ -1,6 +1,6 @@
 //
 //  alpaca.c
-//  alpaca - "ALways PAcket CApturing"
+//  alpaca - "A Lightweight PAcket CApturer"
 //
 //  Created by Sherman, Jeffrey A. on 3/4/15.
 //  Copyright (c) 2015 Sherman, Jeffrey A. All rights reserved.
@@ -9,229 +9,285 @@
 //  http://www.tcpdump.org/sniffex.c
 //
 //  and the source of tcpdump-4.6.2. I think the latter is pretty spiffy, so
-//  where appropriate I'm going to steal some of their argument syntax and
-//  feature set.
+//  where appropriate I will steal some its argument syntax and feature set.
 
 /*
-    WHAT:
-    Quick and dirty packet capture demonstration using libpcap.
+ WHAT:
+ Packet capture routine using libpcap, trimmed for a special purpose.
  
-    We intend to run it for long periods, hence the name:
-    alpaca - "ALways PAcket CApturing"
-           - "A Lightweight PAcket CApture"
-           - "
-    
-    Run with argument -h  to print usage information
-    Run with argument -dd to print program parameters and exit.
+ We intend to run it for long periods, hence the name possibilities:
  
-    WHY:
-    A tcpdump on a NIST timeserver for port 123 traffic yeilds ~1.6 GB of data
-    per hour.
+ alpaca     - "ALways PAcket CApturing"
+            - "A Lightweight PAcket CApturer"
  
-    We want... less. Maybe just a timestamped list of source IP addresses to 
-    answer questions like:
-        a) How many unique IP client addresses do we see over a month?
-        b) What is the distribution of traffic over the work week, around DST
-           transitions, leap second months, long weekends, etc. ?
-        c) What is the distribution of very frequent/infrequent requesting IPs?
+ USAGE:
+ Compile on FreeBSD with included Makefile:
+    % make
  
-    WHO:
-    Useful idiot, Jeff A. Sherman (jeff.sherman@nist.gov, x3511)
- 
-    HOW:
-    The built-in packet filter and libpcap will do the heavy lifting.
- 
-    We define a filter string for packets we are interested in, like "udp port 
-    123", which libpcap_compile() turns into packet-filter byte code. The low-
-    level packet filter code then efficiently tosses us matching packets for
-    further processing.
- 
-    When we get a packet, we'll log what little information we want and throw
-    away the rest. While the capture should happen with high process priority
-    (low pirority number), we can offload some of the data munging to a low
-    priority process (high priority number).
+ Run with:
+    #alpaca -h   to print detailed usage information and exit.
+    #alpaca -d   to print lots of debugging messages to stderr.
+    #alpaca -dd  to print a summary line per packet processed.
+    #alpaca -ddd to list program parameters and exit.
 
-    Because I envision running this program for long periods, let's set the 
-    following aspirational design goals:
+    #alpaca -C 12 -B 20.5 -W 24 -G 3600 -u jsherman -o -z
+    Captures until the first of these conditions are met:
+        a) 12 billion packets processed (-C option)
+        b) 20.5 GB of raw data is written (-B option)
+        c) 24 log files are filled, with 1 hour alloted per log file (-W and -G)
+    with dropping root privs in exchange for user "jsherman" (-u), automatic
+    compression (-z) of old logfiles, overwriting (-o) if necessary.
  
-        1. At the earliest opportunity, i.e. after opening the packet capture, 
-           we'll drop root privileges.
+ WHY:
+ A tcpdump on a NIST timeserver for port 123 traffic yeilds ~1.6 GB of data
+ per hour.
  
-        2. Even if we're only logging 12 bytes per packet, logfiles may still 
-           grow at a rate ~330 MB/hour (representative of time-a, for example). 
-           So, we want to build in a mechanism for rotating logfiles and comp-
-           ressing old log files automatically.
+ We want... less. Perhaps just a timestamped list of client IP addresses to
+ answer pertinent questions like:
+ a) How many unique IP client addresses do we see over a month?
+ b) What is the distribution of traffic over the work week, around DST
+ transitions, leap second months, long weekends, etc. ?
+ c) What is the temporal distribution of very frequent/infrequent requesting 
+ IPs and abuse traffic?
  
-        3. Ideally, we should implement command line switches for termination 
-           upon a certain number of captured packets, certain total run time, 
-           etc. Safe builtin default values will be used if no command-line 
-           arguments are given.
+ WHO:
+ Useful idiot, Jeff A. Sherman (jeff.sherman@nist.gov, x3511)
  
-        4. I need to be CAREFUL because crashing a live system is UNACCEPTABLE.
+ HOW:
+ The built-in packet filter and libpcap will do the heavy lifting.
  
-        5. This last goal is especially difficult because this is my first
-           attempt at any of this stuff. So, I will attempt to hew closely to 
-           modern C conventions and to steal very liberally from clear and 
-           successful code like tcpdump. I might even learn what I'm doing
-           along the way.
+ We define a filter string for packets we are interested in, like "udp port
+ 123", which libpcap_compile() turns into packet-filter bytecode. The low-
+ level packet filter efficiently tosses us matching packets for processing.
  
-    For now the output file format will be flexible. Suggest extenstion:
-    ".spit" for Special Packet Information Tally.
+ When we get a packet, we'll log what little information we want, how we
+ want, and throw away the rest.
  
-    WHEN:
-    Last significant documentation update: March 5, 2015 -jas.
-*/
+ Because I envision running this program for long intervals, let's set the
+ following aspirational design goals:
+ 
+ 1. At the earliest opportunity---right after opening the packet capture
+ device (/dev/bpf)---we'll drop root privileges. So I should learn
+ how to do that.
+ 
+ 2. Even if we're only logging 12 bytes per packet, logfiles may still
+ grow at a rate ~330 MB/hour (representative of time-a, for example).
+ So, we want a mechanism for rotating logfiles and compressing old log
+ files automatically.
+ 
+ 3. Ideally, we should implement command-line parameters for termination
+ upon a certain number of captured packets, total run time, etc. Safe
+ default values will be used if command-line arguments are absent.
+ 
+ 4. I need to be CAREFUL because crashing a live system is UNACCEPTABLE.
+ 
+ 5. This latter goal is especially difficult because I'm a scientist and
+ therefore write horrible C. So, I will attempt to learn and practice
+ modern C conventions and plan to steal very liberally from clear and
+ successful code such as tcpdump.
+ 
+ For now the output file format is flexible. Suggest file extension: ".spit"
+ for Special Packet Information Tally.
+ 
+ WHEN:
+ Last significant documentation update: March 10, 2015 -jas.
+ 
+ */
+
+/*
+ COMPILING ON FREE-BSD notes:
+    %make clean
+    %make
+ */
 
 #define APP_NAME                    "alpaca"
 #define APP_FILE_EXTENSION          "spit"
 #define APP_VERSION_MAJOR           0
 #define APP_VERSION_MINOR           1
 
-#define MAC_OS_X
-
-#include <stdio.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/cdefs.h>
 #include <stdbool.h>
-#include <strings.h>
+#include <string.h>
 #include <sys/time.h>
 #include <errno.h>
 #include <getopt.h>
 
+#include "alpaca-config.h"
+
+/* On FreeBSD v6, include for get/set priority */
+#include <sys/resource.h>
+
+/* Signal handling */
+#include <signal.h>
+#include "setsignal.h"
+#include <sys/wait.h>
+
 /* Inlcude pwd.h and uuid.h to support dropping root privileges */
 #include <pwd.h>
+
+#ifdef MAC_OS_X
 #include <uuid/uuid.h>
+#else
+#include <uuid.h>
+#endif
 
 /* Include pcap and some networking libraries */
 #include <pcap.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "alpaca-ethernet.h"
 
-/* Default values for tunable parameters */
+#define THOUSAND                    (u_int64_t)1000
+#define MILLION                     THOUSAND * THOUSAND
+#define BILLION                     THOUSAND * MILLION
+#define KB                          (u_int64_t)1024
+#define MB                          KB * KB
+#define GB                          KB * MB
 
-/* At 12 bytes, 1 billion packets is 12 GB uncompressed, which is about as much
-   disk space as I'd ever want to use. We can consider raising this when the
-   log rotation and compression scheme is proven. Until then, a 1 billion limit
-   on packet count will limit us to about a day of runtime.
- */
+// For now, 1000 default limit and 1 billion for maximum.
+#define DEFAULT_PACKET_COUNT_LIMIT  1 * THOUSAND
+#define MAX_PACKET_COUNT_LIMIT      20 * BILLION
 
-//#define DEFAULT_PACKET_COUNT_LIMIT  ((u_int64_t)1 << 30)      /* 1 073 741 824, or ~1.0 billion */
-#define DEFAULT_PACKET_COUNT_LIMIT  1000ULL                     /* Limit of 1000 packets for quick tests */
-#define MAX_PACKET_COUNT_LIMIT      ((u_int64_t)1 << 63) - 1    /* 9223372036854775807 or ~9.2e18 */
+#define DEFAULT_BYTES_WRITTEN_LIMIT 10 * GB
+#define MAX_BYTES_WRITTEN_LIMIT     40 * GB
 
-#define DEFAULT_SNAP_LEN            90
+#define DEFAULT_SNAP_LEN            68      /* 90 gets the whole NTP packet */
 #define MAX_SNAP_LEN                1518
 
 #define DEFAULT_LOG_ROTATE_SECONDS  30
 #define MAX_LOG_ROTATE_SECONDS      3600
 
 #define DEFAULT_NUMBER_LOG_FILES    3
-#define MAX_NUMBER_LOG_FILES        336     /* 336 hours = 2 weeks */
+#define MAX_NUMBER_LOG_FILES        672     /* 672 hours = 4 weeks */
+#define DEFAULT_FILE_INDEX_CHARS    3
 
 #define DEFAULT_COMPRESS_MODE       0       /* Default no compression */
 #define DEFAULT_OVERWRITE_MODE      0
+#define DEFAULT_STATS_MODE          0
 
 #define DEFAULT_DUMPFILE_ROOT       "alpaca_out"
 #ifndef PATH_MAX
 #define PATH_MAX                    1024
 #endif
+#ifndef USER_MAX
+#define USER_MAX                    32
+#endif
 
-/* XCode seems to have brain damage; it doesn't set the working directory
-   correctly when debugging the process as root.  So, during development
-   we'll keep this nonsense around. */
+/*
+ XCode seems to have some brain damage; it doesn't set the working directory 
+ correctly when debugging the process as root. Yes, I adjusted the field in the
+ "build scheme" dialog box; it doesn't seem to care.
+ */
 #ifdef  MAC_OS_X
 #define DEFAULT_PATH_FROM_CWD   "/Users/shermanj/"
 #else
 #define DEFAULT_PATH_FROM_CWD   ""
 #endif
+#define DEFAULT_USERNAME        "nobody"
 
 
-/* Shamefully use some globals; set safe defaults where appropriate */
-bool    debug = false;
-pcap_t  *handle;                     /* Handle to libpcap capture process */
-char    *username = NULL;            /* When dropping root, the user to adpot */
+/* Shamefully use globals; set safe defaults where appropriate */
+u_short   debug_level = 0;
+pcap_t    *handle;                          /* libpcap handle */
+char      filter_exp[] = "udp port 123";    /* filter expression */
+
+char      username[USER_MAX]    = DEFAULT_USERNAME;
 
 u_short   limit_snaplen         = DEFAULT_SNAP_LEN;
 u_int64_t limit_packet_count    = DEFAULT_PACKET_COUNT_LIMIT;
-u_int32_t limit_time_per_file   = DEFAULT_LOG_ROTATE_SECONDS;
-u_int32_t limit_log_rotations   = DEFAULT_NUMBER_LOG_FILES;
+u_int64_t limit_bytes_written   = DEFAULT_BYTES_WRITTEN_LIMIT;
+int32_t   limit_time_per_file   = DEFAULT_LOG_ROTATE_SECONDS;
+int32_t   limit_log_rotations   = DEFAULT_NUMBER_LOG_FILES;
+u_short   limit_fileindex_chars = DEFAULT_FILE_INDEX_CHARS;
 
+u_short   stats_mode            = DEFAULT_STATS_MODE;
 u_short   compress_mode         = DEFAULT_COMPRESS_MODE;
 u_short   overwrite_mode        = DEFAULT_OVERWRITE_MODE;
 
 time_t    program_start_t;
 time_t    file_start_t;
+u_int64_t bytes_written = 0;
+u_int64_t packet_count = 0;
 int       file_count = 0;
-char      dumpfile_dirpath[]    = DEFAULT_PATH_FROM_CWD;
-char      dumpfile_root[]       = DEFAULT_DUMPFILE_ROOT;
+char      dumpfile_dirpath[PATH_MAX]    = DEFAULT_PATH_FROM_CWD;
+char      spitfile_root[PATH_MAX]       = DEFAULT_DUMPFILE_ROOT;
 char      current_file_name[PATH_MAX];
 FILE      *fd;
 
-#define SIZE_ETHERNET       14      /* Ethernet header is always 14 bytes */
-#define ETHER_ADDR_LEN      6       /* Ethernet HW address is always 6 bytes */
-struct sniff_ethernet{
-    u_char ether_dhost[ETHER_ADDR_LEN];
-    u_char ether_shost[ETHER_ADDR_LEN];
-    u_short ether_type;             /* IP? ARP? Etc. */
-};
 
-struct sniff_ip{
-    u_char  ip_vhl;                 /* version << 4 | header length >> 2 */
-    u_char  ip_tos;                 /* Type of service */
-    u_short ip_len;                 /* total length */
-    u_short ip_id;                  /* identification */
-    u_short ip_off;                 /* fragment offset field */
-#define IP_RF   0x8000              /* reserved fragment flag */
-#define IP_DF   0x4000              /* don't fragment flag */
-#define IP_MF   0x2000              /* more fragments flag */
-#define IP_OFFMASK 0x1fff           /* mask for fragmenting bits */
-    u_char  ip_ttl;                 /* time to live */
-    u_char  ip_p;                   /* protocol */
-    u_short ip_sum;                 /* checksum */
-    struct in_addr ip_src, ip_dst;  /* source and destination IP addresses */
-};
-#define IP_HL(ip)   (((ip)->ip_vhl) & 0x0f)
-#define IP_V(ip)    (((ip)->ip_vhl) >> 4)
+/* Signal handlers */
+#define RETSIGTYPE      void
+static RETSIGTYPE cleanup(int signo){
+    if (debug_level) {
+        fprintf(stderr,"Caught signal to cleanup %d.\n",signo);
+    }
+    pcap_breakloop(handle);
+}
+static RETSIGTYPE child_cleanup(int signo){
+    /* It's not like I know what I'm doing, but the signal handler "SA_NOCLDWAIT"
+       is set in setsignal() for SIGCHLD, so maybe this function isn't necessary.
+       The idea here is to guarentee that fork()'ed children responsible for old
+       logfile compression don't stay around as zombie processes.
+     
+       If this function is called, then the wait() ought to allow the process to
+       die
+     */
+    if (debug_level) {
+        fprintf(stderr,"Caught SIGCHLD.\n");
+    }
+    wait(NULL);
+}
 
-struct sniff_udp{
-    u_short udp_sport;              /* source port */
-    u_short udp_dport;              /* destination port */
-    u_short udp_len;                /* length */
-    u_short udp_sum;                /* checksum */
-};
+static void print_start_date(){
+    size_t max = 100;
+    char str[max];
+    time_t t;
+    struct tm *tp;
+    
+    /* Get current system time and populate tm time/date fields */
+    time(&t);
+    tp = gmtime(&t);
+    if (strftime(str, max, "%F, %T", tp) > 0){
+        fprintf(stdout,"%s started at %s.\n",APP_NAME,str);
 
-/*
-struct dump_info_t {
-    char    *root_file_name;
-    char    *current_file_name[PATH_MAX];
-    pcap_t  *pd;
-    FILE    *fd;
-};
-*/
+    }
+}
 
 static void print_usage(){
-    
+    /*
     fprintf(stdout, "------------------------80 character terminal template-------------------------\n");
     fprintf(stdout, "0        1         2         3        4         5         6         7         8\n");
     fprintf(stdout, "1234567890123456789012345678901234567801234567890123456789012345678901234567890\n");
     fprintf(stdout, "-------------------------------------------------------------------------------\n");
-    fprintf(stdout, "Usage: %s -[cdhoz] [-s bytes] [-G seconds] -[W maxnum] \n",APP_NAME);
-    fprintf(stdout, "     -c maxnum    quit after maxnum packets captured (default %llu, max %llu)\n",
-            DEFAULT_PACKET_COUNT_LIMIT,MAX_PACKET_COUNT_LIMIT);
-    fprintf(stdout, "     -d           turn debug messages on.\n");
-    fprintf(stdout, "     -dd          print program parameters and exit.\n");
-    fprintf(stdout, "     -h           display this help message. \n");
-    fprintf(stdout, "     -s bytes     set packet snapshot length (default %d, max %d)\n",
-            DEFAULT_SNAP_LEN,MAX_SNAP_LEN);
-    fprintf(stdout, "     -G seconds   capture for defined time (default %d, max %d)\n",
-            DEFAULT_LOG_ROTATE_SECONDS,MAX_LOG_ROTATE_SECONDS);
-    fprintf(stdout, "     -W maxnum    quit after maxnum log file rotations (default %d, max %d)\n",
+     */
+    fprintf(stdout, "Usage: %s -[Sozdh?] [-C maxnum] [-B maxdata] [-W maxnum] [-G seconds]\n",APP_NAME);
+    fprintf(stdout, "                        [-s bytes] [-u userid]\n");
+    fprintf(stdout, "     -C maxnum    quit after maxnum packets [billions]  (default %.2g, max %.2g)\n",
+            (double)(DEFAULT_PACKET_COUNT_LIMIT)/ (1.0*BILLION),
+            (double)(MAX_PACKET_COUNT_LIMIT)/ (1.0*BILLION));
+    fprintf(stdout, "     -B maxdata   quit after writing maxdata [GBytes]   (default %.2g, max %.2g)\n",
+            (double)(DEFAULT_BYTES_WRITTEN_LIMIT)/ (1.0*GB),
+            (double)(MAX_BYTES_WRITTEN_LIMIT)/ (1.0*GB));
+    fprintf(stdout, "     -W maxnum    quit after maxnum log file rotations  (default %d, max %d)\n",
             DEFAULT_NUMBER_LOG_FILES,MAX_NUMBER_LOG_FILES);
-    fprintf(stdout, "     -o           overwrite savefiles (default no, exit instead).\n");
-    fprintf(stdout, "     -z           compress log files when rotated (default false).\n");
+    fprintf(stdout, "     -G seconds   time limit per output file [seconds]  (default %d, max %d)\n",
+            DEFAULT_LOG_ROTATE_SECONDS,MAX_LOG_ROTATE_SECONDS);
+    fprintf(stdout, "     -s bytes     set packet snapshot length [bytes]    (default %d, max %d)\n",
+            DEFAULT_SNAP_LEN,MAX_SNAP_LEN);
+    fprintf(stdout, "     -u userid    drop root privliges to this user      (default 'nobody')\n");
+    fprintf(stdout, "     -S           print periodic statistics messages    (default no).\n");
+    fprintf(stdout, "     -o           overwrite compressed savefiles        (default no).\n");
+    fprintf(stdout, "     -z           compress log files when rotated       (default no).\n");
+    fprintf(stdout, "     -d           turn most debug messages on.\n");
+    fprintf(stdout, "     -dd          print a summary of each packet received to stdout.\n");
+    fprintf(stdout, "     -ddd         print program parameters and exit.\n");
+    fprintf(stdout, "     -h or -?     display this help message. \n");
+    fprintf(stdout, "Exiting.\n");
 }
 
 static void print_parameters(){
@@ -240,28 +296,34 @@ static void print_parameters(){
     
     char cwd[PATH_MAX];
     getcwd(cwd, sizeof(cwd));
-    
+    /*
     fprintf(stdout, "------------------------80 character terminal template-------------------------\n");
     fprintf(stdout, "0        1         2         3        4         5         6         7         8\n");
     fprintf(stdout, "1234567890123456789012345678901234567801234567890123456789012345678901234567890\n");
     fprintf(stdout, "-------------------------------------------------------------------------------\n");
-    fprintf(stdout, "-dd argument parsed. Printing program parameters and exiting...\n");
-    fprintf(stdout, "Start time (seconds since epoch):       %ld\n",program_start_t);
-    fprintf(stdout, "Dumpfile root filename:                 %s\n",dumpfile_root);
-    fprintf(stdout, "Packet snapshot length (snaplen bytes): %d\n",limit_snaplen);
-    fprintf(stdout, "Capture time per log file (seconds):    %d\n",limit_time_per_file);
-    fprintf(stdout, "Quit after capturing packets:           %llu\n",limit_packet_count);
-    fprintf(stdout, "Quit after log file rotations:          %d\n",limit_log_rotations);
-    fprintf(stdout, "Compress log files on rotation:         %d\n",(compress_mode > 0));
-    fprintf(stdout, "Overwrite log files instead of exiting: %d\n",(overwrite_mode > 0));
-    fprintf(stdout, "Current working directory: %s\n",cwd);
+     */
+    fprintf(stdout, "Current %s parameters:\n",APP_NAME);
+    fprintf(stdout, "Start time (seconds since epoch):         %ld\n",(long)program_start_t);
+    fprintf(stdout, "Spitfile root filename:                   %s\n",spitfile_root);
+    fprintf(stdout, "BPF filter string:                        %s\n",filter_exp);
+    fprintf(stdout, "Packet snapshot length (snaplen bytes):   %d\n",limit_snaplen);
+    fprintf(stdout, "Capture time per log file (seconds):      %d\n",limit_time_per_file);
+    fprintf(stdout, "Quit after capturing packets (billion):   %.2g\n",(double)limit_packet_count/(1.0*BILLION));
+    fprintf(stdout, "Quit after writing data (GBytes):         %.2g\n",(double)limit_bytes_written/(1.0*GB));
+    fprintf(stdout, "Quit after log file rotations:            %d\n",limit_log_rotations);
+    fprintf(stdout, "Print some statistics periodically:       %d\n",stats_mode);
+    fprintf(stdout, "Compress log files upon rotation:         %d\n",(compress_mode > 0));
+    fprintf(stdout, "Overwrite (compressed) files:             %d\n",(overwrite_mode > 0));
+    fprintf(stdout, "Drop root and become user:                %s\n",username);
+    fprintf(stdout, "Current working directory:                %s\n",cwd);
+    fprintf(stdout, "Exiting.\n");
 }
 
-static void drop_root(const char *username){
+static void drop_root(){
     struct passwd *pw = NULL;
     
     if (!username) {
-        fprintf(stderr,"Trying to drop root with no defined username. Exiting!\n");
+        fprintf(stderr,"Trying to drop root with no (or NULL) defined username. Exiting!\n");
         exit(EXIT_FAILURE);
     }
     
@@ -282,24 +344,24 @@ static void drop_root(const char *username){
                 pcap_strerror(errno));
         exit(EXIT_FAILURE);
     }
-    else{
-        if (debug) {
-            fprintf(stderr,"Successfully dropped from root to user '%s'.\n", username);
-        }
+    
+    /* If we're still here, drop was successful */
+    if (debug_level) {
+        fprintf(stderr,"Successfully dropped from root to user '%s'.\n", username);
     }
 }
 
-static void compose_dumpfile_name(int cnt, int max_chars){
+static void compose_spitfile_name(int cnt){
     char *buffer = malloc(PATH_MAX+1);
     
-    if (cnt == 0 && max_chars == 0) {
-        if (sprintf(buffer, "%s%s.%s", dumpfile_dirpath, dumpfile_root,APP_FILE_EXTENSION) > PATH_MAX){
+    if (cnt == 0 && limit_fileindex_chars == 0) {
+        if (sprintf(buffer, "%s%s.%s", dumpfile_dirpath, spitfile_root, APP_FILE_EXTENSION) > PATH_MAX){
             fprintf(stderr, "Error composing a filename with too many characters.  Exiting.\n");
             exit(EXIT_FAILURE);
         }
     }
     else{
-        if (sprintf(buffer, "%s%s%0*d.%s", dumpfile_dirpath, dumpfile_root, max_chars,cnt,APP_FILE_EXTENSION) > PATH_MAX){
+        if (sprintf(buffer, "%s%s%0*d.%s", dumpfile_dirpath, spitfile_root, limit_fileindex_chars,cnt,APP_FILE_EXTENSION) > PATH_MAX){
             fprintf(stderr, "Error composing a filename with too many characters.  Exiting.\n");
             exit(EXIT_FAILURE);
         }
@@ -311,39 +373,41 @@ static void compose_dumpfile_name(int cnt, int max_chars){
 #define ALPACA_WORD     4
 #define ALPACA_TERM     0xFFFFFFFF
 
-void alpaca_spit(register FILE *fd, const time_t ts, const struct in_addr a){
-
-    /* Notes about byte ordering:
-     So, timestamps (type long) are written in little-endian, at least on my
-     Mac.  So, for example:
+void alpaca_spit(register FILE *fd, const time_t ts, const in_addr_t a){
+    /*
+     Notes about byte ordering:
+     So, timestamps (time_t = type long) are written little-endian, at least
+     on my Mac. For example,
+     
+                                    LSB             MSB
      ts = 1 425 664 608 is saved as 0x60 0xEA 0xF9 0x54
      
-     Meanwhile, IPv4 addresses are probably stored in network byte order,
-     which I guess is big-endian. So, for example,
+     Meanwhile, IPv4 addresses are given to us in network byte order, which
+     is big-endian (makes-sensian). That is,
+     
+                                    MSB             LSB
      a = 132.163.11.126 is saved as 0x84 0xA3 0x0B 0x7E
      
-     This is pretty goofy, and maybe I'll do something about it later, but
-     not now.
+     When we write it to disk, the byte-ordering will be backwards unless we
+     convert it to host-order first. Fixed this on March 11, 2015.
      
-     Notes about a file format.
+     Notes about an ad-hoc file format:
+     With the aim towards maximum efficiency, here's my clever idea. The first
+     word we write in a file is the integer seconds timestamp, followed by an
+     packet's IPv4 address. For subsequent packets, if the timestamp is unchanged
+     (same integer), we only write IP addresses. On the next integer second, we
+     write the invalid address (255.255.255.255 = 0xFFFFFFFF) as a terminator.
+     This special terminator marks that the next word is the fresh timestamp.
      
-     With the aim towards maximum compression, here's my clever idea. The first
-     word we write in a file is the integer second timestamp, followed by an
-     IPv4 address. Then, as long as the timestamp doesn't roll-over to the next
-     second, we just write IP addresses. On the next integer second, we write
-     the class E IPv4 address (255.255.255.255 = 0xFFFFFFFF) as a terminator.
-     This terminator signals that the next word is a timestamp.
+     For this scheme to work across rotated logfiles, we must call alpaca_spit()
+     with a zero timestamp to cause a reset in the stored integer second.
      
-     For this scheme to work across rotated logfiles, we'll call alpaca_spit()
-     with a zero timestamp to signal a reset in the stored integer second.
+     This is pretty goofy, and maybe I'll do something... No, who am I kidding?
      
-     With ~8000 requests per second, this means:
-        8000 * (4 bytes)/(IPv4 address) + (8 byte timestamp and terminator)
-        ~ 32 kBytes/second
-        ~ 115 MBytes/hour
-     
-     The format is likely still quite compressable because much of the time
-     stamp is repeated, and many IPv4 addresses are likely frequent repeats.
+     With ~8000 request packets per second, all this hub-bub means an expected
+     data accumulation rate of:
+     8000 * (4 bytes)/(IPv4 address) + (8 bytes for timestamp and terminator)
+     ~ 32 kBytes/second or 115 MBytes/hour or 2.7 GBytes/day or 18.9 GBytes/week
      
      N.B. There is currently no error checking on writes.
      */
@@ -352,38 +416,104 @@ void alpaca_spit(register FILE *fd, const time_t ts, const struct in_addr a){
     static long terminator = ALPACA_TERM;
     
     if (this_ts == 0) {
-        /* Passed in timestamp, ts, is the first for this file */
+        /* The passed in timestamp, ts, is the first word for this file */
         (void)fwrite(&ts,ALPACA_WORD,1,fd);
+        bytes_written += ALPACA_WORD;
         this_ts = ts;
     }
     else if(ts == 0){
-        /* Signal that this file is ending; prepare for next file */
+        /* This signal means the file is ending. Prepare for next file by
+         restting the state of this_ts. Don't write an IPv4 address,
+         just return. */
         this_ts = 0;
-        return;  /* Don't write an address */
+        return;
     }
     else if (this_ts != ts) {
-        /* New integer second, so mark it */
+        /* Mark the new integer second */
         (void)fwrite(&terminator, ALPACA_WORD, 1, fd);
         (void)fwrite(&ts,ALPACA_WORD,1,fd);
+        bytes_written += ALPACA_WORD + ALPACA_WORD;
         this_ts = ts;
     }
     
+    /* Unless we returned early, always write an IPv4 address */
     (void)fwrite(&a,ALPACA_WORD,1,fd);
+    bytes_written += ALPACA_WORD;
+}
+
+void compress_logfile(const char *f){
+    char fc[PATH_MAX];
+    strcpy(fc, f);
+    pid_t child_pid;
+    char *compress_cmd = "bzip2";
+    int exec_return;
+    
+    /*
+     Some notes on compression performance:
+     Test run on time-a had 30 minute logfile rotations.
+     Compressed file size:   30,330,854 bytes (28.9 MB)
+     Uncompressed file size: 38,708,135 bytes
+     Savings:                ~ 21%, so a little marginal.
+     
+     Still going to accumulate ~ 60 MB per hour (10 GB per week!)
+     */
+    
+    child_pid = fork();
+    
+    if (child_pid != 0) {
+        /* Fork gives parent process the child's PID */
+        if (debug_level) {
+            fprintf(stderr, "For logfile compression, forked child PID %u.\n",child_pid);
+        }
+        return;
+    }
+    else{
+        /* 
+         Fork returns 0 to the child process.
+         
+         Try to renice the process to use very low resources (high priority
+         value). Execute a compression command on the stored filename fc.
+         */
+        
+        if (setpriority(PRIO_PROCESS, 0, PRIO_MAX) != 0){
+            fprintf(stderr, "In compress_logfile, error resetting process priority.\n");
+        }
+        
+        if (overwrite_mode) {
+            exec_return = execlp(compress_cmd,compress_cmd,"-f",fc,(char *)NULL);
+        }
+        else{
+            exec_return = execlp(compress_cmd,compress_cmd,fc,(char *)NULL);
+        }
+        
+        if (exec_return == -1) {
+            fprintf(stderr, "In compress_logfile, %s %s failed with error %s",
+                    compress_cmd,fc,strerror(errno));
+        }
+        else{
+            if (debug_level) {
+                fprintf(stderr,"Compression of %s successful.\n",fc);
+            }
+        }
+        exit(1);
+    }
 }
 
 
-void alpaca_dumpfile_rotation(void){
-    /* Close current file */
+void alpaca_spitfile_rotation(void){
     if (fd != NULL) {
         fclose(fd);
-        if (debug) {
+        if (debug_level) {
             fprintf(stderr,"Closed file %s.\n",current_file_name);
+        }
+        if (compress_mode) {
+            compress_logfile(current_file_name);
         }
     }
     
-    /* Shall we make a new one? */
+    /* Shall we make a new file? */
     if (file_count < limit_log_rotations) {
-        compose_dumpfile_name(file_count,2);
+        compose_spitfile_name(file_count);
         
         fd = fopen(current_file_name,"w+");
         if (fd == NULL) {
@@ -393,7 +523,7 @@ void alpaca_dumpfile_rotation(void){
         }
         file_start_t = time(NULL);
         file_count++;
-        if (debug) {
+        if (debug_level) {
             fprintf(stderr, "File rotation successful, opened %s.\n",current_file_name);
         }
     }
@@ -401,7 +531,7 @@ void alpaca_dumpfile_rotation(void){
         /* File limit reached, shut it down! */
         pcap_breakloop(handle);
         fd = NULL;
-        if (debug) {
+        if (debug_level) {
             fprintf(stderr, "File rotation limit reached.\n");
         }
     }
@@ -409,125 +539,192 @@ void alpaca_dumpfile_rotation(void){
 
 
 void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet){
-    static u_int64_t count = 0;                 /* packet counter */
-    
-    /* declare pointers to packet headers */
-    const struct sniff_ethernet *ethernet;      /* ethernet header */
-    const struct sniff_ip *ip;                  /* ip header */
-    const struct sniff_udp *udp;                /* udp header */
-    
     /*
-    struct dump_info_t *dump_info = (struct dump_info_t *)args;
-    */
+     This function is the callback for pcap_loop(). We're called whenever a packet
+     matches the filter expression. Some general information could be passed in
+     using the first argument, but I am a wuss and have opted to use global
+     variables for application state information.
+     */
+    
+    /* Declare pointers for packet headers: we'll map raw packet information
+     into the defined structure fields.
+     */
+    const struct sniff_ethernet *ethernet;      /* ethernet header */
+    const struct sniff_ip       *ip;            /* ip header */
+    const struct sniff_udp      *udp;           /* udp header */
     
     int size_ip;
     //int size_udp;
     
-    struct timeval ts;                          /* pcap timestamp */
-    ts = header->ts;
+    struct timeval ts = header->ts;             /* pcap timestamp */
     
-    count++;
-    ethernet = (struct sniff_ethernet *)packet;
-    ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
+    packet_count++;
+    ethernet =  (struct sniff_ethernet *)packet;
+    ip =        (struct sniff_ip*)(packet + SIZE_ETHERNET);
+    
+    /* Below we're going to make sure we're processing UDP/IP packets. In the general
+     case, this ought to be reworked.
+     */
     
     size_ip = IP_HL(ip)*4;
-    if (size_ip < 20) {
-        fprintf(stderr,"Packet number %llu: invalid IP header length %u bytes.\n", count, size_ip);
+    if ((size_ip < 20) && debug_level) {
+        fprintf(stderr,"Packet number %llu: invalid IP header length %u bytes.\n", packet_count, size_ip);
         return;
     }
     
-    if (ip->ip_p != IPPROTO_UDP) {
-        fprintf(stderr,"Packet number %llu: not UDP. Protocol number is %u.\n", count, ip->ip_p);
+    if ((ip->ip_p != IPPROTO_UDP) && debug_level) {
+        fprintf(stderr,"Packet number %llu: not UDP. Protocol number is %u.\n", packet_count, ip->ip_p);
         return;
     }
     
-    udp = (struct sniff_udp*)(packet + SIZE_ETHERNET + size_ip);
-    if(debug){
-        fprintf(stderr,"Packet number %llu at %ld.%d ", count, ts.tv_sec, ts.tv_usec);
-        fprintf(stderr,"from src address %s port %u.\n", inet_ntoa(ip->ip_src), udp->udp_sport);
+    if(debug_level >= 2){
+        udp = (struct sniff_udp*)(packet + SIZE_ETHERNET + size_ip);
+        fprintf(stderr,"Packet number %llu at %ld.%ld ", packet_count, ts.tv_sec, (long)ts.tv_usec);
+        fprintf(stderr,"from src address %s port %u.\n", inet_ntoa(ip->ip_src), ntohs(udp->udp_sport));
     }
     
     /* Is it time to rotate files? */
     if (fd != NULL) {
         if ((ts.tv_sec - file_start_t) > (time_t)limit_time_per_file) {
-            if (debug) {
+            if (debug_level) {
                 fprintf(stderr,"File %s time limit reached.\n",current_file_name);
             }
-            alpaca_spit(fd, 0, ip->ip_src);     /* Special signal that file is ending */
-            alpaca_dumpfile_rotation();
+            alpaca_spit(fd, 0, ALPACA_TERM); /* Special signal that file is ending */
+            alpaca_spitfile_rotation();
         }
     }
     
-    /* Are we still saving to disk? Did any file rotation preserve fd? */
+    /* 
+       Are we still saving to disk?
+       Did a file rotation preserve fd? 
+       Remember to spit addresses out in host byte ordering?
+     */
     if (fd != NULL) {
-        alpaca_spit(fd, ts.tv_sec, ip->ip_src);
+        alpaca_spit(fd, ts.tv_sec,ntohl(ip->ip_src.s_addr));
     }
     
     /* Have we captured the maximum number of allowed packets? */
-    if (count >= limit_packet_count){
+    if (packet_count >= limit_packet_count){
         pcap_breakloop(handle);
-        if (debug) {
-            fprintf(stderr,"Packet count %llu has reached limit; pcap_breakloop() called.\n",count);
+        if (debug_level) {
+            fprintf(stderr,"Packet count %llu has reached limit; pcap_breakloop() called.\n",packet_count);
         }
         return;
     }
 }
 
 
-
-
-// XCode's default main signature:
-// int main(int argc, const char * argv[]) {
-
+/*
+ // XCode's default main signature, preserved for posterity:
+ int main(int argc, const char * argv[]) {
+ */
 int main(int argc, char **argv){
     char *dev;                          /* device */
     char errbuf[PCAP_ERRBUF_SIZE];      /* error string placeholder */
     struct bpf_program fp;              /* compiled filter */
-    char filter_exp[] = "udp port 123"; /* filter expression */
-    
-    /*
-    struct dump_info_t *dump_info;
-    */
     
     bpf_u_int32 mask;                   /* our netmask */
     bpf_u_int32 net;                    /* out IP */
     
-    register int cnt = 100000;          /* number to capture per loop-around */
+    struct pcap_stat stats;
+    double run_hours;
+    int cnt = 500000;                   /* number to capture per loop-around */
     int loop_status = 0;                /* return of pcap_loop */
     bool finished = false;
     
-    int op;                             /* command line argument */
-    int dflag=0;
+    int op;                             /* a command line argument */
+    int dflag=0;                        /* debug level incrementer */
     
-    /* On startup, get system time to seconds precision */
+    
+    /* Setup signal handlers, blatently ripped off from tcpdump */
+    void (*oldhandler)(int);
+    (void)setsignal(SIGPIPE, cleanup);
+    (void)setsignal(SIGTERM, cleanup);
+    (void)setsignal(SIGINT, cleanup);
+    (void)setsignal(SIGCHLD, child_cleanup);
+    
+    if ((oldhandler = setsignal(SIGHUP, cleanup)) != SIG_DFL) {
+        (void)setsignal(SIGHUP, oldhandler);
+    }
+    
+    strncpy(username, DEFAULT_USERNAME, USER_MAX);
+    /* On startup, store system time to seconds precision */
     program_start_t = time(NULL);
     if (program_start_t == (time_t)-1) {
-        fprintf(stderr,"Error getting program start time. Exiting.\n");
+        fprintf(stderr,"Error getting system time. Exiting.\n");
         exit(EXIT_FAILURE);
     }
     
     /* Parse command line arguments */
-    while((op = getopt(argc, argv, "dos:zh")) != -1){
+    while((op = getopt(argc, argv, "doC:B:s:u:G:W:Szh")) != -1){
         switch (op) {
-            case 'd':
+            case 'd':           /* Increase debug level */
                 dflag++;
                 break;
-            case 'o':
+            case 'o':           /* Compressed file overwrite? */
                 overwrite_mode++;
                 break;
-            case 's':
+            case 'C':           /* Adjust limit for number of packets */
+                limit_packet_count = (u_int64_t)atof(optarg)*BILLION;
+                if (limit_packet_count > MAX_PACKET_COUNT_LIMIT) {
+                    fprintf(stderr,"Restricting packet limit from ~%.2g billion to defined max ~%.2g billion\n",
+                            (double)limit_packet_count,(double)MAX_PACKET_COUNT_LIMIT);
+                    limit_packet_count = MAX_PACKET_COUNT_LIMIT;
+                }
+                break;
+            case 'B':           /* Adjust limit for GBytes written */
+                limit_bytes_written = (u_int64_t)(atof(optarg)*GB);
+                if (limit_packet_count > MAX_BYTES_WRITTEN_LIMIT){
+                    fprintf(stderr,"Restricting data write limit from ~%.2g GB to defined max ~%.2g GB\n",
+                            (double)limit_bytes_written/GB,(double)MAX_BYTES_WRITTEN_LIMIT/GB);
+                }
+                break;
+            case 's':           /* Adjust PCAP "snapshot bytes" */
                 limit_snaplen = atoi(optarg);
                 if(limit_snaplen > MAX_SNAP_LEN){
-                    fprintf(stderr,"Restricting snaplen from %d to defined max %d.\n",limit_snaplen,MAX_SNAP_LEN);
+                    fprintf(stderr,"Restricting snaplen from %d to defined max %d.\n",
+                            limit_snaplen,MAX_SNAP_LEN);
                     limit_snaplen = MAX_SNAP_LEN;
                 }
                 break;
-            case 'z':
+            case 'S':           /* Print periodic statistics messages */
+                stats_mode++;
+                break;
+            case 'u':           /* Adjust userid to which we drop from root */
+                strncpy(username,optarg, USER_MAX);
+                break;
+            case 'G':           /* Adjust the time limit per logfile */
+                limit_time_per_file = atoi(optarg);
+                if (limit_time_per_file < 0) {
+                    fprintf(stderr,"Invalid number of seconds for argument -G: %s. Exiting.\n",
+                            optarg);
+                    exit(EXIT_FAILURE);
+                }
+                else if (limit_time_per_file > MAX_LOG_ROTATE_SECONDS){
+                    fprintf(stderr,"Specified number of seconds per log file %s exceeds maximum.\n \
+                            Truncating value to %d",optarg,MAX_LOG_ROTATE_SECONDS);
+                    limit_time_per_file = MAX_LOG_ROTATE_SECONDS;
+                }
+                break;
+            case 'W':           /* Adjust the maximum number of log file rotations */
+                limit_log_rotations = atoi(optarg);
+                if (limit_log_rotations < 0) {
+                    fprintf(stderr,"Invalid number of log file rotations given for argument -W: %s. Exiting.\n",
+                            optarg);
+                    exit(EXIT_FAILURE);
+                }
+                else if (limit_log_rotations > MAX_NUMBER_LOG_FILES){
+                    fprintf(stderr,"Number of log file rotations %s exceeds maximum.\n \
+                            Truncating value to %d",optarg,MAX_NUMBER_LOG_FILES);
+                    limit_log_rotations = MAX_NUMBER_LOG_FILES;
+                }
+                break;
+            case 'z':           /* Compress old logfiles? */
                 compress_mode++;
                 break;
             case 'h':   /* drop through */
             case '?':   /* drop through */
-            default:
+            default:    /* print help message if all else fails */
                 print_usage();
                 exit(EXIT_SUCCESS);
                 break;
@@ -535,11 +732,23 @@ int main(int argc, char **argv){
     }
     
     if (dflag >= 1) {
-        debug = true;
-        fprintf(stderr,"Debug messages on.\n");
+        debug_level = 1;
+        fprintf(stderr,"%s version %u.%u.\n",
+                APP_NAME,APP_VERSION_MAJOR,APP_VERSION_MINOR);
+        fprintf(stderr,"Using libpcap version %u.%u.\n",
+                PCAP_VERSION_MAJOR,PCAP_VERSION_MINOR);
+        print_start_date();
+        fprintf(stderr,"Debug level 1 enabled: most actions generate a message.\n");
     }
-    if (dflag == 2) {
-        /* Print what parameters are set and exit */
+    
+    if (dflag >= 2){
+        debug_level = 2;
+        fprintf(stderr,"Debug level 2 enabled: print one line per recieved packet.\n");
+    }
+    
+    if (dflag > 2) {
+        debug_level = 3;
+        fprintf(stderr,"Debug level 3 enabled: print current parameters and exit.\n");
         print_parameters();
         exit(EXIT_SUCCESS);
     }
@@ -547,93 +756,121 @@ int main(int argc, char **argv){
     /* Define the device */
     dev = pcap_lookupdev(errbuf);
     if (dev == NULL) {
-        fprintf(stderr, "Couldn't find default device: %s\n", errbuf);
+        fprintf(stderr, "Couldn't find default device: %s.\n", errbuf);
+        fprintf(stderr, "Maybe you're not starting as root? Exiting.\n");
         return(EXIT_FAILURE);
     }
     
     /* Get device properties */
     if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) {
-        fprintf(stderr, "Couldn't get netmask for device %s: %s. Exiiting. \n", dev, errbuf);
+        fprintf(stderr, "Couldn't get netmask for device %s: %s. Exiting. \n",
+                dev, errbuf);
         exit(EXIT_FAILURE);
     }
     
     /* Open session in non-promiscuous mode */
-    handle = pcap_open_live(dev, BUFSIZ, 0, 1000, errbuf);
+    handle = pcap_open_live(dev, limit_snaplen, 0, 1000, errbuf);
     if (handle == NULL) {
-        fprintf(stderr, "Couldn't open device %s: %s\n", dev, errbuf);
+        fprintf(stderr, "Couldn't open device %s with snaplen %u: %s. Exiting.\n",
+                dev, limit_snaplen, errbuf);
         exit(EXIT_FAILURE);
     }
     
     /* Verify we're capturing on an Ethernet device */
     if (pcap_datalink(handle) != DLT_EN10MB) {
-        fprintf(stderr, "Device %s is not an Ethernet.\n", dev);
+        fprintf(stderr, "Device %s is not an Ethernet. Exiting.\n", dev);
+        exit(EXIT_FAILURE);
+    }
+    
+    /* Set pcap to capture only inbound packets */
+    if (pcap_setdirection(handle, PCAP_D_IN) == -1) {
+        fprintf(stderr, "Couldn't set pcap direction filter. Exiting.\n");
         exit(EXIT_FAILURE);
     }
     
     /* Compile and apply the packet filter */
     if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
-        fprintf(stderr, "Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
+        fprintf(stderr, "Couldn't parse filter %s: %s. Exiting.\n", filter_exp, pcap_geterr(handle));
         exit(EXIT_FAILURE);
     }
     if (pcap_setfilter(handle, &fp) == -1) {
-        fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
+        fprintf(stderr, "Couldn't install filter %s: %s. Exiting.\n", filter_exp, pcap_geterr(handle));
         exit(EXIT_FAILURE);
     }
     
-    /* Set the snapshot length */
-    if (pcap_set_snaplen(handle, limit_snaplen) == -1) {
-        fprintf(stderr, "Couldn't set snapshot length to %d", limit_snaplen);
+    if (debug_level) {
+        fprintf(stderr, "PCAP ready on device %s, net %u.%u.%u.%u, mask %u.%u.%u.%u.\n",
+                dev,
+                (net       )  & 0xFF,
+                (net  >>  8)  & 0xFF,
+                (net  >> 16)  & 0xFF,
+                (net  >> 24)  & 0xFF,
+                (mask      )  & 0xFF,
+                (mask >>  8)  & 0xFF,
+                (mask >> 16)  & 0xFF,
+                (mask >> 24)  & 0xFF);
+    }
+    
+    /* Try dropping root; not optional! */
+    drop_root();
+    
+    if (limit_log_rotations == 0) {
+        limit_fileindex_chars = 0;
+    }
+    else if (limit_log_rotations < 10) {
+        limit_fileindex_chars = 1;
+    }
+    else if(limit_log_rotations < 100){
+        limit_fileindex_chars = 2;
+    }
+    else if(limit_log_rotations < 1000){
+        limit_fileindex_chars = 3;
+    }
+    else{
+        fprintf(stderr,"Looks like you've asked for more than 1000 log files!\n");
+        fprintf(stderr,"This might be reasonable, but edit the soruce code if you're so sure. Exiting.\n");
         exit(EXIT_FAILURE);
     }
     
-    /* Try dropping root */
-    username = "shermanj";
-    drop_root(username);
-    
-    
-    if (dumpfile_root != NULL) {
-        /* We're going to be saving data to disk */
-        /*
-         dump_info->current_file_name = malloc(PATH_MAX + 1);
-         if (dump_info->current_file_name == NULL) {
-         fprintf(stderr,"Error on malloc of current_file_name. Exiting.\n");
-         exit(EXIT_FAILURE);
-         }
-         */
-        
+    if (spitfile_root != NULL) {
         /* Compose filename into first argument, with number index and extension */
-        compose_dumpfile_name(file_count,2);
-        
+        compose_spitfile_name(file_count);
         fd = fopen(current_file_name,"w+");
         if (fd == NULL) {
-            fprintf(stderr,"Error opening file %s for writing: %d. Exiting. \n",
+            fprintf(stderr,"Error opening file %s for writing: %d. Exiting.\n",
                     current_file_name,errno);
             exit(EXIT_FAILURE);
         }
-        else if (debug){
-            fprintf(stderr,"Opened dumpfile: %s\n",current_file_name);
+        else if (debug_level){
+            fprintf(stderr,"Opened spitfile: %s\n",current_file_name);
         }
         file_start_t = time(NULL);
         file_count++;
     }
     
-    /* Ok, launch the pcap_loop with our callback function defined */
+    /* Ok, launch the pcap_loop with our callback function "got_packet" defined */
     do{
         loop_status = pcap_loop(handle, cnt, got_packet, NULL);
-    
         switch (loop_status) {
             case 0:
-                finished = false;           /* cnt merely expired; let's go around again */
+                /* cnt merely expired; maybe print some stats and go around again */
+                if (stats_mode) {
+                    run_hours = (time(NULL)-program_start_t)/3600.0;
+                    pcap_stats(handle, &stats);
+                    fprintf(stdout,"%s stats: %.2f hrs, %u rec'd (pcap), %u dropped (pcap), %.2g tallied, %.2g GB written\n",
+                            APP_NAME,run_hours,stats.ps_recv,stats.ps_drop,
+                            (double)packet_count, (double)bytes_written/GB);
+                }
                 break;
             case -1:
                 finished = true;
-                if (debug) {
+                if (debug_level) {
                     fprintf(stderr,"pcap_loop exited with error status -1: %s.\n",pcap_geterr(handle));
                 }
                 break;
             case -2:
                 finished = true;
-                if (debug) {
+                if (debug_level) {
                     fprintf(stderr,"pcap_loop exited with status -2 because pcap_breakloop() called.\n");
                 }
                 break;
@@ -645,12 +882,15 @@ int main(int argc, char **argv){
     } while(!finished);
     
     
-    if (debug) {
-        fprintf(stderr,"Cleaning up...");
+    if (debug_level) {
+        fprintf(stderr,"Cleaning up...\n");
     }
     /* Clean up */
     if (fd != NULL) {
         fclose(fd);
+        if (compress_mode) {
+            compress_logfile(current_file_name);
+        }
     }
     pcap_freecode(&fp);
     pcap_close(handle);
