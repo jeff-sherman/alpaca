@@ -159,12 +159,14 @@ USAGE:                                                      / / /|        ejm97
 #define DEFAULT_SNAP_LEN            68      /* 90 gets a whole NTP packet */
 #define MAX_SNAP_LEN                1518
 
-#define DEFAULT_LOG_ROTATE_SECONDS  30
+#define DEFAULT_LOG_ROTATE_SECONDS  60
 #define MAX_LOG_ROTATE_SECONDS      3600
 
 #define DEFAULT_NUMBER_LOG_FILES    3
 #define MAX_NUMBER_LOG_FILES        672     /* 672 hours = 4 weeks */
 #define DEFAULT_FILE_INDEX_CHARS    3
+
+#define DEFAULT_STATS_ALARM_SECONDS 900      /* 900 s = 15 minutes */
 
 #define DEFAULT_COMPRESS_MODE       0       /* Default no compression */
 #define DEFAULT_OVERWRITE_MODE      0
@@ -242,6 +244,26 @@ static RETSIGTYPE child_cleanup(int signo){
         fprintf(stderr,"Caught SIGCHLD.\n");
     }
     wait(NULL);
+}
+
+RETSIGTYPE print_stats_on_alarm(int signo){
+    struct pcap_stat stats;
+    float run_hours = (time(NULL)-program_start_t)/3600.0;
+    
+    pcap_stats(handle, &stats);
+    fprintf(stdout,"%s: %.2f hrs. pcap says %u rec'd, %u dropped. Our callback says %llu tallied, %.3e GB written\n",
+            APP_NAME,
+            run_hours,
+            stats.ps_recv,
+            stats.ps_drop,
+            packet_count,
+            (double)bytes_written/(1.0*GB));
+    fflush(stdout);
+    
+    /* Reset alarm signal */
+    if (stats_mode) {
+        alarm(DEFAULT_STATS_ALARM_SECONDS);
+    }
 }
 
 static void print_start_date(){
@@ -633,14 +655,7 @@ int main(int argc, char **argv){
     bpf_u_int32 mask;                   /* our netmask */
     bpf_u_int32 net;                    /* out IP */
     
-    struct pcap_stat stats;
-    double run_hours;
-    int cnt = 1000000;                  /* number to capture per loop-around */
-                                        /* Presently, cnt sets the interval 
-                                           between pcap_stats printing with the
-                                           -S command ling argument 
-                                         */
-                                         
+    const int cnt = 10 * (int)MILLION;  /* number to capture per loop-around */
     int loop_status = 0;                /* return of pcap_loop */
     bool finished = false;
     
@@ -652,8 +667,9 @@ int main(int argc, char **argv){
     void (*oldhandler)(int);
     (void)setsignal(SIGPIPE, cleanup);
     (void)setsignal(SIGTERM, cleanup);
-    (void)setsignal(SIGINT, cleanup);
+    (void)setsignal(SIGINT,  cleanup);
     (void)setsignal(SIGCHLD, child_cleanup);
+    (void)setsignal(SIGALRM, print_stats_on_alarm);
     
     if ((oldhandler = setsignal(SIGHUP, cleanup)) != SIG_DFL) {
         (void)setsignal(SIGHUP, oldhandler);
@@ -828,6 +844,7 @@ int main(int argc, char **argv){
     /* Try dropping root; not optional! */
     drop_root();
     
+    /* Prepare first .spit file for output */
     if (limit_log_rotations == 0) {
         limit_fileindex_chars = 0;
     }
@@ -862,27 +879,18 @@ int main(int argc, char **argv){
         file_count++;
     }
     
+    /* Send outselves a SIGALRM to print stats periodically */
+    if (stats_mode) {
+        alarm(DEFAULT_STATS_ALARM_SECONDS);
+    }
+    
     /* Ok, launch the pcap_loop with our callback function "got_packet" defined above */
     do{
         loop_status = pcap_loop(handle, cnt, got_packet, NULL);
         switch (loop_status) {
             case 0:
-                /* cnt merely expired; maybe print some stats and go around again */
-                if (stats_mode) {
-                    run_hours = (time(NULL)-program_start_t)/3600.0;
-                    pcap_stats(handle, &stats);
-                    fprintf(stdout,"%s: %.2f hrs. pcap says %u rec'd, %u dropped. Our callback says %.6e tallied, %.6e GB written\n",
-                            APP_NAME,run_hours,stats.ps_recv,stats.ps_drop,
-                            (double)packet_count,
-                            (double)bytes_written/(1.0*GB));
-                    fflush(stdout);
-                    
-                /* 
-                   NOTE: We might miss packets captured while we spend time in this switch,
-                   having not restarted pcap_loop() yet. For now, we log both pcap's idea of 
-                   the number of packets captured and the total tallied by our callback function.
-                 */
-                }
+                /* cnt merely expired, let's go around again */
+                ;
                 break;
             case -1:
                 finished = true;
