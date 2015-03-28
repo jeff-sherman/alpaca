@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A12C3C291AC5F6230049B41E /* Makefile in Sources */ = {isa = PBXBuildFile; fileRef = A12C3C281AC5F6230049B41E /* Makefile */; };
 		A12E5EDF1ABCEB81007695F0 /* alpaca.c in Sources */ = {isa = PBXBuildFile; fileRef = A12E5EDE1ABCEB81007695F0 /* alpaca.c */; };
 		A12E5EE01ABCEB8A007695F0 /* setsignal.c in Sources */ = {isa = PBXBuildFile; fileRef = A117E6491AB0C78D001962B2 /* setsignal.c */; };
 		A1E22DD21AA76DF900C4CDBB /* libpcap.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A1E22DD11AA76DF900C4CDBB /* libpcap.dylib */; };
@@ -29,6 +30,7 @@
 		A117E6491AB0C78D001962B2 /* setsignal.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = setsignal.c; sourceTree = "<group>"; };
 		A117E64A1AB0C78D001962B2 /* setsignal.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = setsignal.h; sourceTree = "<group>"; };
 		A117E64C1AB0E337001962B2 /* alpaca-ethernet.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "alpaca-ethernet.h"; sourceTree = "<group>"; };
+		A12C3C281AC5F6230049B41E /* Makefile */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.make; path = Makefile; sourceTree = "<group>"; };
 		A12E5EDE1ABCEB81007695F0 /* alpaca.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = alpaca.c; sourceTree = "<group>"; };
 		A1E22DC71AA76DCD00C4CDBB /* alpaca */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = alpaca; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1E22DD11AA76DF900C4CDBB /* libpcap.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libpcap.dylib; path = usr/lib/libpcap.dylib; sourceTree = SDKROOT; };
@@ -71,6 +73,7 @@
 				A117E64C1AB0E337001962B2 /* alpaca-ethernet.h */,
 				A117E6481AB09DDC001962B2 /* alpaca-config.h */,
 				A12E5EDE1ABCEB81007695F0 /* alpaca.c */,
+				A12C3C281AC5F6230049B41E /* Makefile */,
 			);
 			path = alpaca;
 			sourceTree = "<group>";
@@ -131,6 +134,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A12C3C291AC5F6230049B41E /* Makefile in Sources */,
 				A12E5EE01ABCEB8A007695F0 /* setsignal.c in Sources */,
 				A12E5EDF1ABCEB81007695F0 /* alpaca.c in Sources */,
 			);

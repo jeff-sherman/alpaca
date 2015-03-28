@@ -2,14 +2,37 @@
 //  alpaca.c
 //  alpaca - "A Lightweight PAcket CApturer"
 //
-//  Created by Sherman, Jeffrey A. on 3/4/15.
-//  Copyright (c) 2015 Sherman, Jeffrey A. All rights reserved.
+//  Jeff A. Sherman (jeff.sherman@nist.gov)
+//  This header last modified on: 27 March 2015
 //
-//  Copying liberally from Tim Carsten's excellent demonstration:
-//  http://www.tcpdump.org/sniffex.c
+//  This software was developed at the National Institute of Standards and
+//  Technology with support from the United States government. Therefore,
+//  original portions are free from copyright protection and are in the public
+//  domain. The use here of any techniques, technologies, or trade names does
+//  not imply endorsement by NIST or the authors.
 //
-//  and the source of tcpdump-4.6.2. I think the latter is pretty spiffy, so
-//  where appropriate I will steal some its argument syntax and feature set.
+//  This software is under active revision and may not function as intended. It
+//  is provided on an "as is" basis. Absolutely no warranty is expressed or
+//  implied; NIST and the authors shall not be liable for any damage resulting
+//  from use or misuse of this software. Unfortunately, no official technical
+//  support services are offered.
+//
+//  Acknowlegdements:
+//  The author learned a great deal from the Tcpdump group's demonstration [1],
+//  "sniffex.c" which itself was derived from "sniffer.c", authored by Tim
+//  Carstens. The licence published with these sources is reproduced in the
+//  included file alpaca-ethernet.h.
+//  
+//  Several parts of this program were insipred by the source for tcpdump-4.6.2;
+//  in a few cases I've copied notation and methods wholesale. Tcpdump is a
+//  product of the Tcpdump group [2], and the code is distributed under the
+//  "three-clause" BSD license, which is reproduced at the bottom of this file.
+//  I've tried to highlight portions of the program wholly derived from other
+//  sources.
+//
+// [1] http://www.tcpdump.org/sniffex.c
+// [2] http://www.tcpdump.org/
+
 
 /*
  WHAT:
@@ -33,7 +56,7 @@ USAGE:                                                      / / /|        ejm97
     #alpaca -ddd to list several adjustable program parameters.
 
     #alpaca -C 12 -B 20.5 -W 24 -G 3600 -u jsherman -o -z
-    Captures until the first of following limit conditions are met:
+    ...captures until the first of following limit conditions are met:
         a) 12 billion packets processed (-C option)
         b) 20.5 GB of raw data is written (-B option)
         c) 24 log files are filled, with 1 hour alloted per log file (-W and -G)
@@ -41,27 +64,26 @@ USAGE:                                                      / / /|        ejm97
     compression (-z) of old logfiles, overwriting (-o) when necessary.
  
  WHY:
- A tcpdump on a NIST timeserver for port 123 traffic yeilds ~1.6 GB of data
- per hour.
- 
- We want... less. Perhaps just a timestamped list of client IP addresses to
- answer pertinent questions like:
- a) How many unique IP client addresses do we see over a month?
- b) What is the distribution of traffic over the work week, around DST
- transitions, leap second months, long weekends, etc. ?
- c) What is the temporal distribution of very frequent/infrequent requesting 
- IPs and abuse traffic?
+ A tcpdump on a NIST NTP timeserver for port 123 traffic yeilds ~1.6 GB of data
+ per hour. We want... less. Perhaps just a timestamped list of client IP 
+ addresses to answer pertinent questions like:
+    a) How many unique IP client addresses do we see over a month?
+    b) What is the distribution of traffic over the work week, around DST
+    transitions, leap second months, long weekends, etc. ?
+    c) What is the temporal distribution of very frequent/infrequent requesting
+    IPs and abuse traffic?
  
  WHO:
  Useful idiot, Jeff A. Sherman (jeff.sherman@nist.gov, x3511)
  
  HOW:
- The built-in packet filter and libpcap will do the heavy lifting.
+ BSD's built-in packet filter and libpcap will do the heavy lifting.
  
  We define a filter string for packets we are interested in, like "udp port
  123", which libpcap_compile() turns into packet-filter bytecode. The low-
- level packet filter efficiently tosses us matching packets for processing.
- 
+ level packet filter, powered by caffenated elves for all I know,
+ efficiently tosses us matching packets for processing.
+
  When we get a packet, we'll log what little information we want, how we
  want, and throw away the rest.
  
@@ -147,8 +169,8 @@ USAGE:                                                      / / /|        ejm97
 #define GB                          KB * MB
 
 /* 
-   For now, define a low default packet count so accidental launches and
-   quick debugging trials don't become epics.
+   For now, define a low default packet count of 1,000 so accidental launches
+   and quick debugging trials don't become epics.
 */
 #define DEFAULT_PACKET_COUNT_LIMIT  1 * THOUSAND
 #define MAX_PACKET_COUNT_LIMIT      20 * BILLION
@@ -156,7 +178,7 @@ USAGE:                                                      / / /|        ejm97
 #define DEFAULT_BYTES_WRITTEN_LIMIT 10 * GB
 #define MAX_BYTES_WRITTEN_LIMIT     40 * GB
 
-#define DEFAULT_SNAP_LEN            68      /* 90 gets a whole NTP packet */
+#define DEFAULT_SNAP_LEN            68      /* 90 bytes = a whole NTP packet */
 #define MAX_SNAP_LEN                1518
 
 #define DEFAULT_LOG_ROTATE_SECONDS  60
@@ -168,13 +190,13 @@ USAGE:                                                      / / /|        ejm97
 
 #define DEFAULT_STATS_ALARM_SECONDS 900      /* 900 s = 15 minutes */
 
-#define DEFAULT_COMPRESS_MODE       0       /* Default no compression */
+#define DEFAULT_COMPRESS_MODE       0
 #define DEFAULT_OVERWRITE_MODE      0
 #define DEFAULT_STATS_MODE          0
 
 #define DEFAULT_SPITFILE_ROOT       "alpaca_out"
 #ifndef PATH_MAX
-#define PATH_MAX                    1024
+#define PATH_MAX                    1024    /* Maximum file path length */
 #endif
 #ifndef USER_MAX
 #define USER_MAX                    32      /* Maximum userid length */
@@ -190,52 +212,52 @@ USAGE:                                                      / / /|        ejm97
 #else
 #define DEFAULT_PATH_FROM_CWD   ""
 #endif
-#define DEFAULT_USERNAME        "nobody"
 
+#define DEFAULT_USERNAME        "nobody"    /* Drop root for this userid */
 
 /* Shamefully use globals; set safe defaults where appropriate */
-u_short   debug_level = 0;
+u_short   debug_level           = 0;
 pcap_t    *handle;                          /* libpcap handle */
-char      filter_exp[] = "udp port 123";    /* filter expression */
-
+char      filter_exp[]          = "udp port 123";
 char      username[USER_MAX]    = DEFAULT_USERNAME;
-
 u_short   limit_snaplen         = DEFAULT_SNAP_LEN;
 u_int64_t limit_packet_count    = DEFAULT_PACKET_COUNT_LIMIT;
 u_int64_t limit_bytes_written   = DEFAULT_BYTES_WRITTEN_LIMIT;
 int32_t   limit_time_per_file   = DEFAULT_LOG_ROTATE_SECONDS;
 int32_t   limit_log_rotations   = DEFAULT_NUMBER_LOG_FILES;
 u_short   limit_fileindex_chars = DEFAULT_FILE_INDEX_CHARS;
-
 u_short   stats_mode            = DEFAULT_STATS_MODE;
 u_short   compress_mode         = DEFAULT_COMPRESS_MODE;
 u_short   overwrite_mode        = DEFAULT_OVERWRITE_MODE;
-
-time_t    program_start_t;
-time_t    file_start_t;
 u_int64_t bytes_written         = 0;
 u_int64_t packet_count          = 0;
-int       file_count = 0;
+int       file_count            = 0;
 char      dumpfile_dirpath[PATH_MAX]    = DEFAULT_PATH_FROM_CWD;
 char      spitfile_root[PATH_MAX]       = DEFAULT_SPITFILE_ROOT;
 char      current_file_name[PATH_MAX];
+time_t    program_start_t;
+time_t    file_start_t;
 FILE      *fd;
 
 
-/* Signal handlers */
-#define RETSIGTYPE      void
-static RETSIGTYPE cleanup(int signo){
+#pragma mark -
+#pragma mark SIGNAL HANDLERS
+/*
+ Signal handling code dervied from tcpdump, see license infomation
+ below.
+ */
+static void cleanup(int signo){
     if (debug_level) {
         fprintf(stderr,"Caught signal to cleanup %d.\n",signo);
     }
     pcap_breakloop(handle);
     fflush(NULL);
 }
-static RETSIGTYPE child_cleanup(int signo){
-    /* It's not like I know what I'm doing, but the signal handler "SA_NOCLDWAIT"
-       is set in setsignal() for SIGCHLD, so maybe this function isn't necessary.
-       The idea here is to guarantee that fork()'ed children responsible for old
-       logfile compression don't stay around as zombie processes.
+static void child_cleanup(int signo){
+    /* The signal handler "SA_NOCLDWAIT" is set in setsignal() for SIGCHLD, 
+       so maybe this function isn't necessary. The idea here is to guarantee 
+       that fork()'ed children responsible for old logfile compression don't 
+       stay around as zombie processes.
      
        If this function is called, then the wait() ought to allow the process to
        die.
@@ -246,7 +268,7 @@ static RETSIGTYPE child_cleanup(int signo){
     wait(NULL);
 }
 
-RETSIGTYPE print_stats_on_alarm(int signo){
+void print_stats_on_alarm(int signo){
     struct pcap_stat stats;
     float run_hours = (time(NULL)-program_start_t)/3600.0;
     
@@ -266,6 +288,8 @@ RETSIGTYPE print_stats_on_alarm(int signo){
     }
 }
 
+#pragma mark -
+#pragma mark INFO PRINTERS
 static void print_start_date(){
     size_t max = 100;
     char str[max];
@@ -343,6 +367,8 @@ static void print_parameters(){
     fprintf(stdout, "Exiting.\n");
 }
 
+#pragma mark -
+#pragma mark DROPPING ROOT
 static void drop_root(){
     struct passwd *pw = NULL;
     
@@ -375,27 +401,38 @@ static void drop_root(){
     }
 }
 
-static void compose_spitfile_name(int cnt){
-    char *buffer = malloc(PATH_MAX+1);
-    
-    if (cnt == 0 && limit_fileindex_chars == 0) {
-        if (sprintf(buffer, "%s%s.%s", dumpfile_dirpath, spitfile_root, APP_FILE_EXTENSION) > PATH_MAX){
-            fprintf(stderr, "Error composing a filename with too many characters.  Exiting.\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-    else{
-        if (sprintf(buffer, "%s%s%0*d.%s", dumpfile_dirpath, spitfile_root, limit_fileindex_chars,cnt,APP_FILE_EXTENSION) > PATH_MAX){
-            fprintf(stderr, "Error composing a filename with too many characters.  Exiting.\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-    strcpy(current_file_name,buffer);
-    free(buffer);
-}
+#pragma mark -
+#pragma mark OUTPUT FILE SUPPORT
+#define ALPACA_WORD             4               /* bytes */
+#define ALPACA_TERM             0xFFFFFFFF
+#define ALPACA_FORMAT_DEFAULT   0x00000000
 
-#define ALPACA_WORD     4
-#define ALPACA_TERM     0xFFFFFFFF
+/* 
+ FILE FORMAT NOTES:
+ For now, we're going to reserve ample room at the head of each file for future
+ use. We anticipate files being ~ 100 MB in size, so 1KB isn't crazy for a
+ summary header.
+ 
+ 1 word = 4 bytes
+ 
+ Word 0:                ALPACA_MAJOR_VERSION_NUMBER
+ Word 1:                ALPACA_MINOR_VERSION_NUMBER
+ Word 2:                ALPACA_FILE_TYPE = 0x00000000 by default
+ Word 3:                |                               |
+ ...                    |   RESERVED FOR FUTURE USE     |
+ Word 1023:             |                               |
+ Word 1024:             Timestamp 0
+ Word 1025:             IPv4 address of packet 0 in timestamp 0
+ Word 1026:             IPv4 address of packet 1 in timestamp 0
+ ...
+ Word 1025 + x:         IPv4 address of packet x, the last in timestamp 0
+ Word 1025 + x + 1:     Timestamp terminator = 0xFFFFFFFF
+ Word 1025 + x + 2:     |   RESERVED FOR CHECKSUM WORD  |
+ Word 1025 + x + 3:     Timestamp 1
+ Word 1025 + x + 4:     IPv4 address of packet 0 in timestamp 1
+ Word 1025 + x + 5:     IPv4 address of packet 1 in timestamp 1
+ ...
+ */
 
 void alpaca_spit(register FILE *fd, const time_t ts, const in_addr_t a){
     /*
@@ -420,7 +457,7 @@ void alpaca_spit(register FILE *fd, const time_t ts, const in_addr_t a){
      word as an unsigned long with little-endian encoding, i.e. just like the
      timestamp. This arbitaray choice was made on March 11, 2015.
      
-     Notes about an ad-hoc file format:
+     Notes about the ad-hoc file format:
      With the aim towards maximum efficiency, here's my clever idea. The first
      word we write in a file is the integer seconds timestamp, followed by an
      packet's IPv4 address. For subsequent packets, if the timestamp is unchanged
@@ -452,22 +489,79 @@ void alpaca_spit(register FILE *fd, const time_t ts, const in_addr_t a){
     }
     else if(ts == 0){
         /* This signal means the file is ending. Prepare for next file by
-         restting the state of this_ts. Don't write an IPv4 address,
-         just return. */
+         restting the state of this_ts. Don't write an IPv4 address, just 
+         return. 
+         */
         this_ts = 0;
         return;
     }
     else if (this_ts != ts) {
-        /* Mark the new integer second */
+        /* Mark the end of this integer second */
         (void)fwrite(&terminator, ALPACA_WORD, 1, fd);
+        /* The next word will be a checksum, yet to be implemented */
+        (void)fwrite(&terminator, ALPACA_WORD, 1, fd);
+        /* Now write the new timestamp*/
         (void)fwrite(&ts,ALPACA_WORD,1,fd);
-        bytes_written += ALPACA_WORD + ALPACA_WORD;
+        bytes_written += ALPACA_WORD + ALPACA_WORD + ALPACA_WORD;
         this_ts = ts;
     }
     
     /* Unless we returned early, always write an IPv4 address */
     (void)fwrite(&a,ALPACA_WORD,1,fd);
     bytes_written += ALPACA_WORD;
+}
+
+static void compose_spitfile_name(int cnt){
+    char *buffer = malloc(PATH_MAX+1);
+    
+    if (cnt == 0 && limit_fileindex_chars == 0) {
+        if (sprintf(buffer, "%s%s.%s", dumpfile_dirpath, spitfile_root, APP_FILE_EXTENSION) > PATH_MAX){
+            fprintf(stderr, "Error composing a filename with too many characters.  Exiting.\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+    else{
+        if (sprintf(buffer, "%s%s%0*d.%s", dumpfile_dirpath, spitfile_root, limit_fileindex_chars,cnt,APP_FILE_EXTENSION) > PATH_MAX){
+            fprintf(stderr, "Error composing a filename with too many characters.  Exiting.\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+    strcpy(current_file_name,buffer);
+    free(buffer);
+}
+
+void open_and_prepare_spitfile(){
+    static const long app_version_major = APP_VERSION_MAJOR;
+    static const long app_version_minor = APP_VERSION_MINOR;
+    static long file_format_default = ALPACA_FORMAT_DEFAULT;
+    
+    static const long reserved_word = 0x00000000;
+    int i;
+    
+    fd = fopen(current_file_name,"w+");
+    if (fd == NULL) {
+        fprintf(stderr,"Error opening file %s for writing: %d. Exiting.\n",
+                current_file_name,errno);
+        exit(EXIT_FAILURE);
+    }
+    else if (debug_level){
+        fprintf(stderr,"Opened spitfile: %s\n",current_file_name);
+    }
+    file_start_t = time(NULL);
+    file_count++;
+    
+    /*
+     Write the new file's preamble
+     */
+    if (fd) {
+        (void)fwrite(&app_version_major,ALPACA_WORD,1,fd);
+        (void)fwrite(&app_version_minor,ALPACA_WORD,1,fd);
+        (void)fwrite(&file_format_default, ALPACA_WORD, 1, fd);
+        for (i = 3; i < 1024; i++) {
+            // Reserved for future use; now blank with zeros.
+            (void)fwrite(&reserved_word,ALPACA_WORD,1,fd);
+        }
+    }
 }
 
 void compress_logfile(const char *f){
@@ -543,18 +637,7 @@ void alpaca_spitfile_rotation(void){
     /* Shall we make a new file? */
     if (file_count < limit_log_rotations) {
         compose_spitfile_name(file_count);
-        
-        fd = fopen(current_file_name,"w+");
-        if (fd == NULL) {
-            fprintf(stderr,"Error opening file %s for writing: %d. Exiting. \n",
-                    current_file_name,errno);
-            exit(EXIT_FAILURE);
-        }
-        file_start_t = time(NULL);
-        file_count++;
-        if (debug_level) {
-            fprintf(stderr, "File rotation successful, opened %s.\n",current_file_name);
-        }
+        open_and_prepare_spitfile();
     }
     else{
         /* File limit reached, shut it down! */
@@ -566,7 +649,8 @@ void alpaca_spitfile_rotation(void){
     }
 }
 
-
+#pragma mark -
+#pragma mark PCAP CALLBACK
 void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet){
     /*
      This function is the callback for pcap_loop(). We're called whenever a packet
@@ -643,6 +727,8 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 }
 
 
+#pragma mark -
+#pragma mark MAIN ROUTINE
 /*
  // XCode's default main signature, preserved here for posterity:
  int main(int argc, const char * argv[]) {
@@ -663,19 +749,22 @@ int main(int argc, char **argv){
     int dflag=0;                        /* debug level incrementer */
     
     
-    /* Setup signal handlers, blatently ripped off from tcpdump */
+    /* 
+     Signal handling code dervied from tcpdump, see license infomation
+     below.
+     */
     void (*oldhandler)(int);
     (void)setsignal(SIGPIPE, cleanup);
     (void)setsignal(SIGTERM, cleanup);
     (void)setsignal(SIGINT,  cleanup);
     (void)setsignal(SIGCHLD, child_cleanup);
     (void)setsignal(SIGALRM, print_stats_on_alarm);
-    
     if ((oldhandler = setsignal(SIGHUP, cleanup)) != SIG_DFL) {
         (void)setsignal(SIGHUP, oldhandler);
     }
     
     strncpy(username, DEFAULT_USERNAME, USER_MAX);
+    
     /* On startup, store system time to seconds precision */
     program_start_t = time(NULL);
     if (program_start_t == (time_t)-1) {
@@ -769,18 +858,15 @@ int main(int argc, char **argv){
         print_start_date();
         fprintf(stderr,"Debug level 1 enabled: most actions generate a message.\n");
     }
-    
     if (dflag >= 2){
         debug_level = 2;
         fprintf(stderr,"Debug level 2 enabled: print one line per recieved packet.\n");
     }
-    
     if (dflag >= 3) {
         debug_level = 3;
         fprintf(stderr,"Debug level 3 enabled: print current parameters.\n");
         print_parameters();
     }
-    
     if (dflag > 3) {
         debug_level = 4;
         fprintf(stderr,"Debug level 4 enabled: immediately exit after printing parameters.\n");
@@ -833,15 +919,16 @@ int main(int argc, char **argv){
     }
     
     if (debug_level) {
-        fprintf(stderr, "PCAP ready on device %s, net %u.%u.%u.%u, mask %u.%u.%u.%u.\n",
+        fprintf(stdout, "PCAP ready on device %s net %u.%u.%u.%u, mask %u.%u.%u.%u.\n",
                 dev,
                 (net       )  & 0xFF, (net  >>  8)  & 0xFF,
                 (net  >> 16)  & 0xFF, (net  >> 24)  & 0xFF,
                 (mask      )  & 0xFF, (mask >>  8)  & 0xFF,
                 (mask >> 16)  & 0xFF, (mask >> 24)  & 0xFF);
+        fprintf(stdout, "Filter string: %s.\n",filter_exp);
     }
     
-    /* Try dropping root; not optional! */
+    /* Attempt dropping root; not optional! */
     drop_root();
     
     /* Prepare first .spit file for output */
@@ -866,20 +953,10 @@ int main(int argc, char **argv){
     if (spitfile_root != NULL) {
         /* Compose filename into first argument, with number index and extension */
         compose_spitfile_name(file_count);
-        fd = fopen(current_file_name,"w+");
-        if (fd == NULL) {
-            fprintf(stderr,"Error opening file %s for writing: %d. Exiting.\n",
-                    current_file_name,errno);
-            exit(EXIT_FAILURE);
-        }
-        else if (debug_level){
-            fprintf(stderr,"Opened spitfile: %s\n",current_file_name);
-        }
-        file_start_t = time(NULL);
-        file_count++;
+        open_and_prepare_spitfile();
     }
     
-    /* Send outselves a SIGALRM to print stats periodically */
+    /* Schedule ourselves a future SIGALRM to print stats periodically */
     if (stats_mode) {
         alarm(DEFAULT_STATS_ALARM_SECONDS);
     }
@@ -889,7 +966,16 @@ int main(int argc, char **argv){
         loop_status = pcap_loop(handle, cnt, got_packet, NULL);
         switch (loop_status) {
             case 0:
-                /* cnt merely expired, let's go around again */
+                /* 
+                 The counter cnt merely expired; let's go around again. Choose a large 
+                 value of cnt to minimize deadtime spent here. Errors and administrative
+                 limits being reached should result in pcap_breakloop() being called, 
+                 making pcap_loop() return, so we don't have to worry about blocking 
+                 forever.
+                 
+                 Also, we have the provision for printing periodic statistics updates
+                 (and perhaps doing other housekeeping) on a shceduled SIGALRM.
+                 */
                 ;
                 break;
             case -1:
@@ -925,3 +1011,32 @@ int main(int argc, char **argv){
     pcap_close(handle);
     exit(EXIT_SUCCESS);
 }
+
+/*
+ Portions of this program were dervied explicitly from tcpdump, a product of 
+ the Tcpdump group (http://www.tcpdump.org/), distributed under the BSD license. 
+ I've attempted to label all such portions with comments, and reproduce the BSD
+ license here.
+ 
+ ****************************************************************************
+ *  License: BSD                                                            *
+ *                                                                          *
+ *  Redistribution and use in source and binary forms, with or without      *
+ *  modification, are permitted provided that the following conditions      *
+ *  are met:                                                                *
+ *                                                                          *
+ *  1. Redistributions of source code must retain the above copyright       *
+ *  notice, this list of conditions and the following disclaimer.           *
+ *  2. Redistributions in binary form must reproduce the above copyright    *
+ *  notice, this list of conditions and the following disclaimer in         *
+ *  the documentation and/or other materials provided with the              *
+ *  distribution.                                                           *
+ *  3. The names of the authors may not be used to endorse or promote       *
+ *  products derived from this software without specific prior              *
+ *  written permission.                                                     *
+ *                                                                          *
+ *  THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR          *
+ *  IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED          *
+ *  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.     *
+ ****************************************************************************
+*/
