@@ -47,8 +47,8 @@
  alpaca     - "ALways PAcket CApturing"  or,              ,
             - "A Lightweight PAcket CApturer"            ~)
                                                           (_---;     ascii-art
-                                                            /|~|\         by
-USAGE:                                                     / / /|       ejm97
+                                                           /|~|\         by
+USAGE:                                                    / / /|       ejm97
  Compiles on FreeBSD with included Makefile:
     % make clean
     % make
@@ -761,7 +761,7 @@ int main(int argc, char **argv){
     bpf_u_int32 mask;                   /* our netmask */
     bpf_u_int32 net;                    /* our IP */
     
-    const int cnt = -1;                 /* -1 = inifinite pcap_loop */
+    const int cnt = -1;                 /* -1 = inifinite pcap_loop   */
     int loop_status = 0;                /* return status of pcap_loop */
     bool finished = false;
     
@@ -906,7 +906,7 @@ int main(int argc, char **argv){
         exit(EXIT_FAILURE);
     }
     
-    /* Open session in non-promiscuous mode */
+    /* Open session in non-promiscuous mode with a buffer timeout of 100 ms */
     pcap_handle = pcap_open_live(dev, limit_snaplen, 0, 100, errbuf);
     if (pcap_handle == NULL) {
         fprintf(stderr, "Couldn't open device %s with snapshot length %u: %s. Exiting.\n",

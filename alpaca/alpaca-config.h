@@ -16,7 +16,9 @@
  single #define here.
  */
 
-// Comment out when on FreeBSD.
+// Comment out when on FreeBSD. Linux may require further configuration.
+//
+// I'm new to this, but the autoconf-like tools seem like a sick joke.
 #define MAC_OS_X
 
 #endif
