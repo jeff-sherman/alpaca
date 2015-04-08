@@ -27,8 +27,10 @@ void (*setsignal (int sig, void (*func)(int)))(int){
      SIGCHLD signals so that we don't have to wait() on finished child processes
      in order to dismiss them. Otherwise, "zombie" processes can pile up.
      
+     So, is SA_NOCLDWAIT a bit like SA_NOCLDLEFTBEHIND?
+     
      For all other signals, we just denote a callback function for handling 
-     them.
+     them, which likely means cleaning up ahead of being terminated by kill().
      */
     memset(&new, 0, sizeof(new));
     new.sa_handler = func;
