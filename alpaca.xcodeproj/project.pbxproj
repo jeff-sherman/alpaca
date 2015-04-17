@@ -50,8 +50,8 @@
 			isa = PBXGroup;
 			children = (
 				A1E22DD11AA76DF900C4CDBB /* libpcap.dylib */,
-				A1E22DC91AA76DCD00C4CDBB /* alpaca */,
 				A1E22DC81AA76DCD00C4CDBB /* Products */,
+				A1E22DC91AA76DCD00C4CDBB /* alpaca */,
 			);
 			sourceTree = "<group>";
 		};

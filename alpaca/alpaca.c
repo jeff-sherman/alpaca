@@ -585,11 +585,11 @@ void alpaca_spit(register FILE *fd,
     bytes_written += ALPACA_WORD;
     if (file_format == 1) {
         // Currently, file format 0 is just the client IP. File format 1
-        // appends port information (2 x 2 bytes = 1 word size). Checksum the
-        // ports as a 4-byte word.
+        // appends port information (2 x 2 bytes = 1 word size). Checksum port
+        // infomation as decimal sums (not the 4-byte word).
         (void)fwrite(&src_port,2,1,fd);
         (void)fwrite(&dst_port,2,1,fd);
-        checksum += ((uint32_t)src_port << 16) + (uint32_t)dst_port;
+        checksum += src_port + dst_port;
         bytes_written += ALPACA_WORD;
     }
 }
