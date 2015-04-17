@@ -229,7 +229,7 @@ USAGE:                                                    / / /|       ejm97
 /* Shamefully use globals; set safe defaults where appropriate */
 u_short   debug_level           = 0;
 pcap_t    *pcap_handle;
-char      filter_exp[]          = "udp port 123";   /*TODO: Command line arg */
+char      filter_exp[]          = "((tcp[tcpflags] & (tcp-syn)) or udp) & (port 123 or port 13 or port 37)";   /*TODO: Command line arg */
 char      username[USER_MAX]    = DEFAULT_USERNAME;
 u_short   limit_snaplen         = DEFAULT_SNAP_LEN;
 u_int64_t limit_packet_count    = DEFAULT_PACKET_COUNT_LIMIT;
@@ -243,6 +243,7 @@ u_short   overwrite_mode        = DEFAULT_OVERWRITE_MODE;
 u_int64_t bytes_written         = 0;
 u_int64_t packet_count          = 0;
 int       file_count            = 0;
+u_short   port_numbers_mode     = 0;
 u_int32_t file_format           = 0;
 
 char      spitfile_dirpath[PATH_MAX]    = DEFAULT_PATH_FROM_CWD;
@@ -321,7 +322,7 @@ static void print_usage(){
     fprintf(stdout, "1234567890123456789012345678901234567801234567890123456789012345678901234567890\n");
     fprintf(stdout, "-------------------------------------------------------------------------------\n");
      */
-    fprintf(stdout, "Usage: %s -[Sozdh?] [-C maxnum] [-B maxdata] [-W maxnum] [-G seconds]\n",APP_NAME);
+    fprintf(stdout, "Usage: %s -[PSozdh?] [-C maxnum] [-B maxdata] [-W maxnum] [-G seconds]\n",APP_NAME);
     fprintf(stdout, "                        [-s bytes] [-u userid]\n");
     fprintf(stdout, "     -C maxnum    quit after maxnum packets [billions]  (default %.2g, max %.2g)\n",
             (double)(DEFAULT_PACKET_COUNT_LIMIT)/ (1.0*BILLION),
@@ -336,6 +337,7 @@ static void print_usage(){
     fprintf(stdout, "     -s bytes     set packet snapshot length [bytes]    (default %d, max %d)\n",
             DEFAULT_SNAP_LEN,MAX_SNAP_LEN);
     fprintf(stdout, "     -u userid    drop root privliges to this user      (default 'nobody')\n");
+    fprintf(stdout, "     -P           record port numbers                   (default no).\n");
     fprintf(stdout, "     -S           print periodic statistics messages    (default no).\n");
     fprintf(stdout, "     -o           overwrite compressed savefiles        (default no).\n");
     fprintf(stdout, "     -z           compress log files when rotated       (default no).\n");
@@ -360,6 +362,7 @@ static void print_parameters(){
     fprintf(stdout, "Start time (seconds since epoch):         %ld\n",(long)program_start_t);
     fprintf(stdout, "Spitfile root filename:                   %s\n",spitfile_root);
     fprintf(stdout, "BPF filter string:                        %s\n",filter_exp);
+    fprintf(stdout, "Record port numbers:                      %d\n",port_numbers_mode);
     fprintf(stdout, "Packet snapshot length (snaplen bytes):   %d\n",limit_snaplen);
     fprintf(stdout, "Capture time per log file (seconds):      %d\n",limit_time_per_file);
     fprintf(stdout, "Quit after capturing packets (billion):   %.2g\n",(double)limit_packet_count/(1.0*BILLION));
@@ -415,7 +418,7 @@ static void drop_root(){
 #define ALPACA_FORMAT_DEFAULT   0x00000000
 
 /* 
- FILE FORMAT NOTES:
+ FILE FORMAT 0 NOTES:
  For now, we're going to reserve ample room at the head of each file for future
  use. I anticipate files being ~ 80 MB in size, so 1 kB isn't crazy for a
  summary header.
@@ -439,9 +442,42 @@ static void drop_root(){
  Word 1025 + x + 4:     IPv4 address of packet 0 in timestamp 1
  Word 1025 + x + 5:     IPv4 address of packet 1 in timestamp 1
  ...
- */
 
-void alpaca_spit(register FILE *fd, const time_t ts, const in_addr_t a){
+ 
+ FILE FORMAT 1 NOTES (added April 16, 2015)
+ For the next run, I'll try recording the client and server port number. This
+ will help us:
+    a) gather request statistics for all the protocols at once
+    b) possibly detect NATs
+    c) learn something about the time-series behavior of daemon (port 123) and
+       other clients (e.g. sntp).
+ 
+ Format follows format 0, but now two port numbers follow each IP address.  For
+ instance:
+ 
+ Word 0:                ALPACA_MAJOR_VERSION_NUMBER
+ Word 1:                ALPACA_MINOR_VERSION_NUMBER
+ Word 2:                ALPACA_FILE_TYPE = 0x00000000 by default
+ Word 3:                |                               |
+ ...                    |   RESERVED FOR FUTURE USE     |
+ Word 1023:             |                               |
+ Word 1024:             Timestamp 0
+ Word 1025:             IPv4 address of packet 0 in timestamp 0
+ Word 1026:             SRC port of packet 0  | DST port of packet 0
+ Word 1027:             IPv4 address of packet 1 in timestamp 0
+ ...
+ Word 1025 + 2x:        IPv4 address of packet x, the last in timestamp 0
+ Word 1025 + 2x + 1:    SRC port of packet x | DST port of packet x
+ Word 1025 + 2x + 2:    Timestamp terminator = 0xFFFFFFFF
+ Word 1025 + 2x + 3:    |   RESERVED FOR CHECKSUM WORD  |
+ Word 1025 + 2x + 4:    Timestamp 1
+ Word 1025 + 2x + 5:    IPv4 address of packet 0 in timestamp 1
+ Word 1025 + 2x + 6:    SRC port of packet 0 | DST port of packet 0
+ Word 1025 + 2x + 7:    IPv4 address of packet 1 in timestamp 1
+ ...
+*/
+
+void alpaca_spit(register FILE *fd, const time_t ts, const in_addr_t a, unsigned int src_port, unsigned int dst_port){
     /*
      Subtle notes about BYTE ORDERING:
      So, timestamps (time_t = type long) are stored and written little-endian, 
@@ -527,6 +563,12 @@ void alpaca_spit(register FILE *fd, const time_t ts, const in_addr_t a){
     /* Unless we returned early, write the passed-in IPv4 address */
     (void)fwrite(&a,ALPACA_WORD,1,fd);
     bytes_written += ALPACA_WORD;
+    if (file_format == 1) {
+        (void)fwrite(&src_port,2,1,fd);
+        (void)fwrite(&dst_port,2,1,fd);
+        bytes_written += ALPACA_WORD;
+    }
+
 }
 
 static void compose_spitfile_name(int file_count){
@@ -558,7 +600,6 @@ static void compose_spitfile_name(int file_count){
 void open_and_prepare_spitfile(){
     static const long app_version_major  = APP_VERSION_MAJOR;
     static const long app_version_minor  = APP_VERSION_MINOR;
-    static u_int32_t file_format_default = ALPACA_FORMAT_DEFAULT;
     static const u_int32_t reserved_word = 0x00000000;
     int i;
     
@@ -578,7 +619,7 @@ void open_and_prepare_spitfile(){
     if (fd) {
         (void)fwrite(&app_version_major,ALPACA_WORD,1,fd);
         (void)fwrite(&app_version_minor,ALPACA_WORD,1,fd);
-        (void)fwrite(&file_format_default, ALPACA_WORD, 1, fd);
+        (void)fwrite(&file_format, ALPACA_WORD, 1, fd);
         for (i = 3; i < 1024; i++) {
             // Reserved for future use; now blank with zeros.
             (void)fwrite(&reserved_word,ALPACA_WORD,1,fd);
@@ -683,19 +724,16 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
     const struct sniff_ethernet *ethernet;      /* ethernet header */
     const struct sniff_ip       *ip;            /* ip header */
     const struct sniff_udp      *udp;           /* udp header */
+    const struct sniff_tcp      *tcp;           /* tcp header */
+    unsigned short              src_port;
+    unsigned short              dst_port;
     int size_ip;
     struct timeval ts = header->ts;             /* pcap timestamp */
-    
     packet_count++;
     ethernet =  (struct sniff_ethernet *)packet;
     ip =        (struct sniff_ip*)(packet + SIZE_ETHERNET);
     
-    /* 
-     Below we're going to make sure we're processing UDP/IP packets. For an 
-     arbitrary filter expression, this needs to be reworked. We'll bail at the 
-     first sight of packet trouble.
-     */
-    
+    /* Confirm well-formed IP */
     size_ip = IP_HL(ip)*4;
     if (size_ip < 20) {
         if (debug_level) {
@@ -704,21 +742,37 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
         return;
     }
     
-    if (ip->ip_p != IPPROTO_UDP) {
+    /* Confirm UDP or TCP and extract port information.*/
+    if (ip->ip_p == IPPROTO_UDP) {
+        udp = (struct sniff_udp*)(packet + SIZE_ETHERNET + size_ip);
+        src_port = ntohs(udp->udp_sport);
+        dst_port = ntohs(udp->udp_dport);
+    }
+    else if (ip->ip_p == IPPROTO_TCP){
+        tcp = (struct sniff_tcp *)(packet + SIZE_ETHERNET + size_ip);
+        if (!(tcp->th_flags & TH_SYN)) {
+            // Only capture first SYN.
+            return;
+        }
+        src_port = ntohs(tcp->th_sport);
+        dst_port = ntohs(tcp->th_dport);
+    }
+    else{
         if (debug_level){
-            fprintf(stderr,"Packet number %llu: not UDP. Protocol number is %u.\n", packet_count, ip->ip_p);
+            fprintf(stderr,"Packet number %llu: not UDP or TCP. Protocol number is %u.\n", packet_count, ip->ip_p);
         }
         return;
     }
     
     if(debug_level >= 2){
-        udp = (struct sniff_udp*)(packet + SIZE_ETHERNET + size_ip);
-        fprintf(stderr,"Packet number %llu at %ld.%06d from src address %s port %u.\n",
+        fprintf(stderr,"Packet number %llu at %ld.%06d from src address %s port %u to local port %u (proto %u).\n",
                 packet_count,
                 (long)ts.tv_sec,
                 (int)ts.tv_usec,
                 inet_ntoa(ip->ip_src),
-                ntohs(udp->udp_sport));
+                src_port,
+                dst_port,
+                ip->ip_p);
     }
     
     /* Is it time to rotate files? */
@@ -727,14 +781,14 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
             if (debug_level) {
                 fprintf(stderr,"File %s time limit reached.\n",current_file_name);
             }
-            alpaca_spit(fd, 0, ALPACA_TERM);    /* signal that file is ending */
+            alpaca_spit(fd, 0, ALPACA_TERM, 0, 0);    /* signal that file is ending */
             alpaca_spitfile_rotation();
         }
     }
     
     /* Are we still saving to disk?  Did a file rotation preserve fd != NULL? */
     if (fd != NULL) {
-        alpaca_spit(fd, ts.tv_sec,ntohl(ip->ip_src.s_addr));
+        alpaca_spit(fd, ts.tv_sec,ntohl(ip->ip_src.s_addr),src_port,dst_port);
     }
     
     /* Have we captured the maximum number of allowed packets?  Shut it down! */
@@ -820,6 +874,9 @@ int main(int argc, char **argv){
                             limit_snaplen,MAX_SNAP_LEN);
                     limit_snaplen = MAX_SNAP_LEN;
                 }
+                break;
+            case 'P':           /* Store port numbers in addition to IP addresses */
+                port_numbers_mode++;
                 break;
             case 'S':           /* Print periodic statistics messages */
                 stats_mode++;
@@ -970,6 +1027,14 @@ int main(int argc, char **argv){
         fprintf(stderr,"Looks like you've asked for more than 1000 log files!\n");
         fprintf(stderr,"This might be reasonable, but edit the soruce code if you're so sure. Exiting.\n");
         exit(EXIT_FAILURE);
+    }
+    
+    /* Currently, only two file formats defined. */
+    if (port_numbers_mode) {
+        file_format = 1;
+    }
+    else{
+        file_format = 0;
     }
     
     if (spitfile_root != NULL) {

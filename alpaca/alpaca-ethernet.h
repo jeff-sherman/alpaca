@@ -39,6 +39,29 @@ struct sniff_ip{
 #define IP_HL(ip)   (((ip)->ip_vhl) & 0x0f)
 #define IP_V(ip)    (((ip)->ip_vhl) >> 4)
 
+typedef unsigned int tcp_seq;
+struct sniff_tcp{
+    u_short th_sport;
+    u_short th_dport;
+    tcp_seq th_seq;
+    tcp_seq th_ack;
+    u_char  th_offx2;               /* data offset, reserved */
+#define TH_OFF(th)  (((th)->th_offx2 & 0xf0) >> 4)
+    u_char  th_flags;
+    u_short th_win;
+    u_short th_sum;
+    u_short th_urp;
+};
+#define TH_FIN  0x01
+#define TH_SYN  0x02
+#define TH_RST  0x04
+#define TH_PUSH 0x08
+#define TH_ACK  0x10
+#define TH_URG  0x20
+#define TH_ECE  0x40
+#define TH_CWR  0x80
+
+
 struct sniff_udp{
     u_int16_t udp_sport;              /* source port */
     u_int16_t udp_dport;              /* destination port */
