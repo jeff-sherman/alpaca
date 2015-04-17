@@ -130,7 +130,7 @@ USAGE:                                                    / / /|       ejm97
 #define APP_NAME                    "alpaca"
 #define APP_FILE_EXTENSION          "spit"
 #define APP_VERSION_MAJOR           0
-#define APP_VERSION_MINOR           1
+#define APP_VERSION_MINOR           2
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -229,7 +229,7 @@ USAGE:                                                    / / /|       ejm97
 /* Shamefully use globals; set safe defaults where appropriate */
 u_short   debug_level           = 0;
 pcap_t    *pcap_handle;
-char      filter_exp[]          = "((tcp[tcpflags] & (tcp-syn)) or udp) & (port 123 or port 13 or port 37)";   /*TODO: Command line arg */
+char      filter_exp[]          = "((tcp[tcpflags] & (tcp-syn) != 0) or udp) and (port 123 or port 13 or port 37)";   /*TODO: Command line arg */
 char      username[USER_MAX]    = DEFAULT_USERNAME;
 u_short   limit_snaplen         = DEFAULT_SNAP_LEN;
 u_int64_t limit_packet_count    = DEFAULT_PACKET_COUNT_LIMIT;
@@ -475,9 +475,24 @@ static void drop_root(){
  Word 1025 + 2x + 6:    SRC port of packet 0 | DST port of packet 0
  Word 1025 + 2x + 7:    IPv4 address of packet 1 in timestamp 1
  ...
-*/
 
-void alpaca_spit(register FILE *fd, const time_t ts, const in_addr_t a, unsigned int src_port, unsigned int dst_port){
+ 
+ CHECKSUM NOTES (added April 17 2015):
+ We'll start with something simple. Let's just sum all the unsigned 4-byte words
+ we write to disk during a given timestamp (including the timestamp but not the
+ terminator nor the checksum itself). We'll take the least significant four 
+ bytes of this sum as the checksum. Corrupted data can likely be thrown out 
+ rather than error-corrected, so we just want to be able to detect it.
+
+ If port information is written, combine the source port and destination ports
+ into a 4-byte word with source port as the MSBs.
+ */
+
+void alpaca_spit(register FILE *fd,
+                 const time_t ts,
+                 const in_addr_t a,
+                 unsigned int src_port,
+                 unsigned int dst_port){
     /*
      Subtle notes about BYTE ORDERING:
      So, timestamps (time_t = type long) are stored and written little-endian, 
@@ -535,40 +550,48 @@ void alpaca_spit(register FILE *fd, const time_t ts, const in_addr_t a, unsigned
     
     static time_t active_ts = 0;
     static long terminator = ALPACA_TERM;
+    static uint32_t checksum = 0; // will likely rollover, saving us a modulus
     
     if (active_ts == 0) {
         /* The passed-in timestamp, ts, is the first timestamp for this file */
         active_ts = ts;
         (void)fwrite(&ts,ALPACA_WORD,1,fd);
         bytes_written += ALPACA_WORD;
+        checksum = (u_int32_t)ts; // reset checksum
     }
     else if(ts == 0){
         /* This signal means this file is ending. Prepare for next file by
          restting active_ts. Don't write anything.
          */
         active_ts = 0;
+        checksum = 0;
         return;
     }
     else if (active_ts != ts) {
-        /* Mark the end of this integer second */
+        /* Mark the end of this integer second and write checksum */
         (void)fwrite(&terminator, ALPACA_WORD, 1, fd);
-        /* Write checksum, yet to be implemented, so here is a placeholder */
-        (void)fwrite(&terminator, ALPACA_WORD, 1, fd);
-        /* Now write the new timestamp and cahce it locally */
+        (void)fwrite(&checksum, ALPACA_WORD, 1, fd);
+        
+        /* Now write the new timestamp, cahce it locally, reset checksum */
         (void)fwrite(&ts,ALPACA_WORD,1,fd);
         bytes_written += ALPACA_WORD + ALPACA_WORD + ALPACA_WORD;
         active_ts = ts;
+        checksum = (u_int32_t)ts;
     }
     
     /* Unless we returned early, write the passed-in IPv4 address */
     (void)fwrite(&a,ALPACA_WORD,1,fd);
+    checksum += (uint32_t)a;
     bytes_written += ALPACA_WORD;
     if (file_format == 1) {
+        // Currently, file format 0 is just the client IP. File format 1
+        // appends port information (2 x 2 bytes = 1 word size). Checksum the
+        // ports as a 4-byte word.
         (void)fwrite(&src_port,2,1,fd);
         (void)fwrite(&dst_port,2,1,fd);
+        checksum += ((uint32_t)src_port << 16) + (uint32_t)dst_port;
         bytes_written += ALPACA_WORD;
     }
-
 }
 
 static void compose_spitfile_name(int file_count){
@@ -635,7 +658,7 @@ void compress_logfile(const char *f){
     
     /*
      Some notes on compression performance:
-     Test run on time-a had 30 minute logfile rotations.
+     Test run on time-a had 30 minute logfile rotations. File format type 0.
      Compressed file size:      30,330,854 bytes (28.9 MB)
      Uncompressed file size:    38,708,135 bytes
      Savings:                   ~ 21%, meh, a little marginal.
@@ -653,10 +676,8 @@ void compress_logfile(const char *f){
     }
     else{
         /* 
-         Child
-         
-         Try to renice the process to use very low resources (high priority
-         value). Execute a compression command on the cached filename fc.
+         Child. Try to renice the process to use very low resources (high 
+         priority value). Execute a compression command on cached filename fc.
          */
         
         if (setpriority(PRIO_PROCESS, 0, PRIO_MAX) != 0){
@@ -719,12 +740,12 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
      application state information.
      
      Like the tcpdump and the Carstens demo, we'll map packet information onto
-     structures.
+     structures defined in alpaca-ethernet.h
     */
     const struct sniff_ethernet *ethernet;      /* ethernet header */
     const struct sniff_ip       *ip;            /* ip header */
-    const struct sniff_udp      *udp;           /* udp header */
-    const struct sniff_tcp      *tcp;           /* tcp header */
+    const struct sniff_udp      *udp;           /* udp header, as applicable */
+    const struct sniff_tcp      *tcp;           /* tcp header, as applicable */
     unsigned short              src_port;
     unsigned short              dst_port;
     int size_ip;
@@ -751,7 +772,8 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
     else if (ip->ip_p == IPPROTO_TCP){
         tcp = (struct sniff_tcp *)(packet + SIZE_ETHERNET + size_ip);
         if (!(tcp->th_flags & TH_SYN)) {
-            // Only capture first SYN.
+            // Only capture first SYN. Filter string should have taken care of
+            // this, but just in case, we check again here.
             return;
         }
         src_port = ntohs(tcp->th_sport);
@@ -823,7 +845,7 @@ int main(int argc, char **argv){
     int dflag=0;                        /* debug level incrementer */
     
     
-    /* Signal handling code dervied from tcpdump.*/
+    /* Signal handling code dervied from tcpdump. */
     void (*oldhandler)(int);
     (void)setsignal(SIGPIPE, cleanup);
     (void)setsignal(SIGTERM, cleanup);
@@ -844,7 +866,7 @@ int main(int argc, char **argv){
     }
     
     /* Parse command line arguments, style copied from tcpdump. */
-    while((op = getopt(argc, argv, "doC:B:s:u:G:W:Szh")) != -1){
+    while((op = getopt(argc, argv, "doC:B:s:u:G:W:SPzh")) != -1){
         switch (op) {
             case 'd':           /* Increase debug level */
                 dflag++;
@@ -1061,7 +1083,8 @@ int main(int argc, char **argv){
             looping forever.
                  
             Alternatively, setting cnt = -1 should mean an infinite pcap_loop 
-            until a pcap_breakloop() is called.
+            until a pcap_breakloop() is called. In this case, the code should
+            never reach this case.
                  
             I used to print periodic statistics updates here (with a finite,
             positive value of cnt), but now we schedule and capture SIGALM for
