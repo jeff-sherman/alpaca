@@ -4,21 +4,25 @@
 # Typical usage:
 #     % make clean
 #     % make
+#
+# 
+
+CC = cc
+CFLAGS = -Wall -O2
 
 all: alpaca
 
 alpaca.o:
-	cc -Wall -c alpaca.c
+	$(CC) $(CFLAGS) -c alpaca.c
 
 setsignal.o:
-	cc -Wall -c setsignal.c
+	$(CC) $(CFLAGS) -c setsignal.c
 
 alpaca: setsignal.o alpaca.o
-	cc -Wall -lpcap alpaca.o setsignal.o -o alpaca
+	$(CC) $(CFLAGS) -lpcap alpaca.o setsignal.o -o alpaca
 
 clean:
 	rm -f *.o *.core alpaca
 
 clean_logs:
 	rm -f alpaca_out*
-

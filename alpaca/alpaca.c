@@ -182,11 +182,19 @@ USAGE:                                                    / / /|       ejm97
    For now, define a low default packet limit of 1,000 so launches by the
    curious and quick debugging trials don't become major epics.
 */
-#define DEFAULT_PACKET_COUNT_LIMIT  1 * THOUSAND
+#define DEFAULT_PACKET_COUNT_LIMIT   1 * THOUSAND
 #define MAX_PACKET_COUNT_LIMIT      20 * BILLION
 
-#define DEFAULT_BYTES_WRITTEN_LIMIT 10 * GB
-#define MAX_BYTES_WRITTEN_LIMIT     40 * GB
+#define DEFAULT_BYTES_WRITTEN_LIMIT  10 * GB
+#define MAX_BYTES_WRITTEN_LIMIT     120 * GB
+
+//                   TCP        UDP
+// Ethernet header =  14        14 bytes
+// IP header size  =  20        20 bytes, assuming no options
+// TCP header size =  20                , assuming no options
+// UDP header size =             8 bytes
+//                    -------------------
+// Min total       =  54        42
 
 #define DEFAULT_SNAP_LEN            68      /* 90 bytes = a whole NTP packet */
 #define MAX_SNAP_LEN                1518
@@ -799,7 +807,7 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
     
     /* Is it time to rotate files? */
     if (fd != NULL) {
-        if ((ts.tv_sec - file_start_t) > (time_t)limit_time_per_file) {
+        if ((ts.tv_sec - file_start_t) >= (time_t)limit_time_per_file) {
             if (debug_level) {
                 fprintf(stderr,"File %s time limit reached.\n",current_file_name);
             }
@@ -884,7 +892,8 @@ int main(int argc, char **argv){
                 break;
             case 'B':           /* Adjust limit for GBytes written */
                 limit_bytes_written = (u_int64_t)(atof(optarg)*GB);
-                if (limit_packet_count > MAX_BYTES_WRITTEN_LIMIT){
+                if (limit_bytes_written > MAX_BYTES_WRITTEN_LIMIT){
+                    limit_bytes_written = MAX_BYTES_WRITTEN_LIMIT;
                     fprintf(stderr,"Restricting data write limit from ~%.2g GB to defined max ~%.2g GB\n",
                             (double)limit_bytes_written/GB,(double)MAX_BYTES_WRITTEN_LIMIT/GB);
                 }
