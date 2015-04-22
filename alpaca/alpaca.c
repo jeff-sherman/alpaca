@@ -9,16 +9,16 @@
 //  Technology with support from the United States government. Therefore,
 //  original portions are free from copyright and exist in the public domain.
 //  The use here of any techniques, technologies, or trade names does not imply
-//  endorsement by NIST, the Time & Frequency Division, or the authors.
+//  endorsement by NIST, the Time & Frequency Division, or any authors.
 //
 //  This software is under active revision and may not function as intended. It
 //  is furnished on an "as is" basis. Absolutely no warranty is expressed or
-//  implied, especially concerning the software's "fitness for purpose". NIST
+//  implied, especially concerning the software's "fitness for purpose." NIST
 //  and the authors shall not be liable for any damage or data loss resulting
 //  from use or misuse of this software. No technical support services are
 //  offered.
 //
-//  Specifically, misuse of this program can easily fill one's system disk.
+//  Listen up; misuse of this program can easily fill one's system disk.
 //  You've been warned.
 //
 //  Acknowledgments:
@@ -40,7 +40,8 @@
 
 /*
  WHAT:
- Packet capture routine using libpcap, trimmed for a special purpose.
+ Packet capture routine using libpcap, trimmed for gathering usage stats on a
+ *very* busy NTP server.
  
  We intend to run it for long periods, hence the name possibilities:
  
@@ -49,15 +50,15 @@
                                                           (_---;     ascii-art
                                                            /|~|\         by
 USAGE:                                                    / / /|       ejm97
- Compiles on FreeBSD with included Makefile:
+ Compiles (for me) on FreeBSD with included Makefile:
     % make clean
     % make
  
  Run with:
     #alpaca -h   to print detailed usage information and exit.
-    #alpaca -d   to print lots of debugging messages to stderr.
+    #alpaca -d   to print debugging/status messages to stderr.
     #alpaca -dd  to print a summary line per packet processed.
-    #alpaca -ddd to list several program parameters.
+    #alpaca -ddd to list several program parameter values at runtime.
 
     #alpaca -C 12 -B 20.5 -W 24 -G 3600 -u jsherman -o -z
     ...captures until the first of the following limit conditions are met:
@@ -89,7 +90,7 @@ USAGE:                                                    / / /|       ejm97
  
  We define a filter string for packets we are interested in, like "udp port
  123", which libpcap_compile() turns into packet-filter bytecode. The low-
- level packet filter, run by a gang of tiny caffenated elves (could be!),
+ level packet filter, run by a gang of tiny caffenated elves---could be!---
  tosses us matching packets and metadata for examination and processing.
 
  When we get a packet, we'll log what little information we want, how we
@@ -102,10 +103,10 @@ USAGE:                                                    / / /|       ejm97
  device (/dev/bpf)---we'll drop root privileges. So I should probably learn
  how to do that.
  
- 2. Even if we logged just 12 bytes per received packet, logfiles would still
- grow at a rate ~330 MB/hour (representative of time-a, for example). So, we 
- want a mechanism for rotating logfiles and compressing old log files 
- automatically. Logfile design should be binary and spartan.
+ 2. Even if we logged just 12 bytes per packet, logfiles would still grow at a 
+ rate ~330 MB/hour (representative of time-a, for example). So, we want a 
+ mechanism for rotating logfiles and compressing old log files automatically. 
+ Logfile design should be binary and spartan.
  
  3. Ideally, we should implement command-line parameters for termination
  upon a certain number of captured packets, total run time, etc. Safe
@@ -188,6 +189,7 @@ USAGE:                                                    / / /|       ejm97
 #define DEFAULT_BYTES_WRITTEN_LIMIT  10 * GB
 #define MAX_BYTES_WRITTEN_LIMIT     120 * GB
 
+// Snapshot length...
 //                   TCP        UDP
 // Ethernet header =  14        14 bytes
 // IP header size  =  20        20 bytes, assuming no options
@@ -453,15 +455,15 @@ static void drop_root(){
 
  
  FILE FORMAT 1 NOTES (added April 16, 2015)
- For the next run, I'll try recording the client and server port number. This
+ For my next run, I'll try recording the client and server port number. This
  will help us:
     a) gather request statistics for all the protocols at once
     b) possibly detect NATs
     c) learn something about the time-series behavior of daemon (port 123) and
        other clients (e.g. sntp).
  
- Format follows format 0, but now two port numbers follow each IP address.  For
- instance:
+ Format follows format 0, but now two port numbers (two bytes each) follow each 
+ IP address. That is,
  
  Word 0:                ALPACA_MAJOR_VERSION_NUMBER
  Word 1:                ALPACA_MINOR_VERSION_NUMBER
@@ -486,14 +488,11 @@ static void drop_root(){
 
  
  CHECKSUM NOTES (added April 17 2015):
- We'll start with something simple. Let's just sum all the unsigned 4-byte words
- we write to disk during a given timestamp (including the timestamp but not the
- terminator nor the checksum itself). We'll take the least significant four 
- bytes of this sum as the checksum. Corrupted data can likely be thrown out 
- rather than error-corrected, so we just want to be able to detect it.
-
- If port information is written, combine the source port and destination ports
- into a 4-byte word with source port as the MSBs.
+ We'll start with something simple. Let's just sum all the words we write to 
+ disk during a given timestamp (including the timestamp but not the terminator 
+ nor the checksum itself). We'll take the least significant four bytes of this 
+ sum as the checksum. Rare corrupted data can likely be thrown out rather than
+ error-corrected; we just want to be able to detect it.
  */
 
 void alpaca_spit(register FILE *fd,
@@ -504,7 +503,7 @@ void alpaca_spit(register FILE *fd,
     /*
      Subtle notes about BYTE ORDERING:
      So, timestamps (time_t = type long) are stored and written little-endian, 
-     at least on my Mac. For example,
+     at least on my Mac and FreeBSD box. For example,
      
                                     LSB             MSB
      ts = 1 425 664 608 is saved as 0x60 0xEA 0xF9 0x54
@@ -517,7 +516,7 @@ void alpaca_spit(register FILE *fd,
      
      If we wrote this to disk on an Intel processor, the byte-ordering will be 
      backwards, unless we remembered that we chose different ordering for the
-     two data fields. So, it is important that we convert it [in the callback
+     two data fields. So, it is better that we convert it [in the callback
      got_packet() function] to host-byte ordering using ntohl().
      
      Likewise, in the analysis code, we'll need to make sure to interpret this
@@ -525,10 +524,10 @@ void alpaca_spit(register FILE *fd,
      fellow physicists would understand:
      
      *------------------------------------------------------------------------*
-     |  an even number of ntohl() calls IS an odd number of minus sign errors |
+     | An even number of ntohl() calls IS an odd number of minus sign errors. |
      *------------------------------------------------------------------------*
      
-     Notes about the ad-hoc FILE FORMAT:
+     Notes about the ad-hoc FILE FORMAT 0:
      With the aim towards maximum efficiency, here's my clever idea. Following a
      header, the first word we write in a file is the integer seconds timestamp, 
      followed by a packet's IPv4 address. For subsequent packets, if the
@@ -592,9 +591,9 @@ void alpaca_spit(register FILE *fd,
     checksum += (uint32_t)a;
     bytes_written += ALPACA_WORD;
     if (file_format == 1) {
-        // Currently, file format 0 is just the client IP. File format 1
-        // appends port information (2 x 2 bytes = 1 word size). Checksum port
-        // infomation as decimal sums (not the 4-byte word).
+        // Currently, file format 0 wants just the client IP. File format 1
+        // appends port information (2 x 2 bytes = 1 word size). Checksum the
+        // port information as decimal sums (not the merged 4-byte word).
         (void)fwrite(&src_port,2,1,fd);
         (void)fwrite(&dst_port,2,1,fd);
         checksum += src_port + dst_port;
@@ -652,7 +651,7 @@ void open_and_prepare_spitfile(){
         (void)fwrite(&app_version_minor,ALPACA_WORD,1,fd);
         (void)fwrite(&file_format, ALPACA_WORD, 1, fd);
         for (i = 3; i < 1024; i++) {
-            // Reserved for future use; now blank with zeros.
+            // Reserved space for future use; now blank with zeros.
             (void)fwrite(&reserved_word,ALPACA_WORD,1,fd);
         }
     }
@@ -670,6 +669,11 @@ void compress_logfile(const char *f){
      Compressed file size:      30,330,854 bytes (28.9 MB)
      Uncompressed file size:    38,708,135 bytes
      Savings:                   ~ 21%, meh, a little marginal.
+     
+     With file format 1, things are a little better:
+     Compressed file size:      124.5 MB
+     Uncompressed file size:    183.9 MB
+     Savings:                   ~ 32%
     */
     
     strcpy(fc, f);
@@ -994,7 +998,7 @@ int main(int argc, char **argv){
         exit(EXIT_FAILURE);
     }
     
-    /* Open session in non-promiscuous mode with a buffer timeout of 100 ms */
+    /* Open session in non-promiscuous mode with a buffer "timeout" of 100 ms */
     pcap_handle = pcap_open_live(dev, limit_snaplen, 0, 100, errbuf);
     if (pcap_handle == NULL) {
         fprintf(stderr, "Couldn't open device %s with snapshot length %u: %s. Exiting.\n",
